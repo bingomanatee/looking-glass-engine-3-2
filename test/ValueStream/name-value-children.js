@@ -13,13 +13,13 @@ tap.test(p.name, (suite) => {
   suite.test('ValueStream', (vs) => {
     vs.test('name', (tName) => {
       tName.test('(valid)', (tNameV) => {
-        tNameV.test('single value - no value', (tNameSV) => {
+        tNameV.test('no value', (tNameSV) => {
           const s = new ValueStream('alpha');
           tNameSV.equal(s.name, 'alpha');
           tNameSV.end();
         });
 
-        tNameV.test('single value - value', (tNameSV) => {
+        tNameV.test('value', (tNameSV) => {
           const s = new ValueStream('alpha', 3);
           tNameSV.equal(s.name, 'alpha');
           tNameSV.end();
@@ -80,27 +80,6 @@ tap.test(p.name, (suite) => {
         });
 
         tSValue.end();
-      });
-
-      tValue.test('(children)', (tCValue) => {
-        tCValue.test('single', (tCValueSingle) => {
-          const alpha = new ValueStream('alpha');
-          alpha._add('beta', 1);
-          tCValueSingle.same(alpha.value, { beta: 1 });
-
-          tCValueSingle.end();
-        });
-
-        tCValue.test('multi', (tCValueMulti) => {
-          const alpha = new ValueStream('alpha');
-          alpha._add('beta', 1);
-          alpha._add('gamma', 'two');
-          tCValueMulti.same(alpha.value, { beta: 1, gamma: 'two' });
-
-          tCValueMulti.end();
-        });
-
-        tCValue.end();
       });
 
       tValue.end();

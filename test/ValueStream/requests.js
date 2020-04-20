@@ -1,38 +1,8 @@
 /* eslint-disable camelcase */
 const tap = require('tap');
 const p = require('../../package.json');
-
+const watchStream = require('../../testUtils/watchStream');
 const { ValueStream } = require('../../lib');
-
-const watchStream = (s) => {
-  const errors = [];
-  const es = s.errors.subscribe((e) => {
-    errors.push(e);
-  });
-
-  const updates = [];
-
-  let value;
-
-  const ss = s.subscribe((localS) => {
-    value = localS.value;
-    updates.push(value);
-  });
-
-  return {
-    errors,
-    getValue() {
-      return value;
-    },
-    getUpdates() {
-      return updates;
-    },
-    unsubscribe() {
-      es.unsubscribe();
-      ss.unsubscribe();
-    },
-  };
-};
 
 /**
  *  testing basic name, value, deserialization
@@ -45,12 +15,12 @@ tap.test(p.name, (suite) => {
       vsRC.test('(missing value)', (vsRCMissing) => {
         const s = new ValueStream('alpha', 4);
 
-        const { errors, unsubscribe } = watchStream(s);
+        const { getErrors, unsubscribe } = watchStream(s);
 
-        s.to();
+        s.next();
         unsubscribe();
 
-        vsRCMissing.equals(errors.length, 0);
+        vsRCMissing.equals(getErrors().length, 0);
         vsRCMissing.equals(s.value, 4);
 
         vsRCMissing.end();
@@ -59,16 +29,17 @@ tap.test(p.name, (suite) => {
       vsRC.test('basic', (vsRCMissing) => {
         const s = new ValueStream('alpha', 4);
 
-        const { errors, getValue, unsubscribe } = watchStream(s);
+        const { getErrors, getValue, unsubscribe } = watchStream(s);
 
         vsRCMissing.equals(getValue(), 4);
 
-        s.to(5);
-        unsubscribe();
+        s.next(5);
 
-        vsRCMissing.equals(errors.length, 0);
+        vsRCMissing.equals(getErrors().length, 0);
         vsRCMissing.equals(s.value, 5);
         vsRCMissing.equals(getValue(), 5);
+
+        unsubscribe();
 
         vsRCMissing.end();
       });
@@ -76,17 +47,18 @@ tap.test(p.name, (suite) => {
       vsRC.test('under transaction', (vsRCMissing) => {
         const s = new ValueStream('alpha', 4);
 
-        const { errors, getValue, unsubscribe } = watchStream(s);
+        const { getErrors, getValue, unsubscribe } = watchStream(s);
 
         const t = s.startTrans();
-        s.to(5);
+        s.next(5);
 
-        vsRCMissing.equals(errors.length, 0);
         vsRCMissing.equals(s.value, 5);
         vsRCMissing.equals(getValue(), 4);
         // transactional locking prevents update messaging
 
         t.endTrans();
+
+        vsRCMissing.equals(getErrors().length, 0);
         vsRCMissing.equals(s.value, 5);
         vsRCMissing.equals(getValue(), 5);
         // a delayed message is sent out because transaction is done.
@@ -103,12 +75,12 @@ tap.test(p.name, (suite) => {
         const s = new ValueStream('alpha', 4);
 
         const {
-          errors, getValue, getUpdates, unsubscribe,
+          getErrors, getValue, getUpdates, unsubscribe,
         } = watchStream(s);
 
-        s.to(5);
+        s.next(5);
 
-        vsTbaseline.equals(errors.length, 0);
+        vsTbaseline.equals(getErrors().length, 0);
         vsTbaseline.equals(s.value, 5);
         vsTbaseline.equals(getValue(), 5);
         vsTbaseline.same(getUpdates(), [4, 5]);
@@ -121,18 +93,18 @@ tap.test(p.name, (suite) => {
         const s = new ValueStream('alpha', 4);
 
         const {
-          errors, getValue, getUpdates, unsubscribe,
+          getErrors, getValue, getUpdates, unsubscribe,
         } = watchStream(s);
 
         const t = s.startTrans();
-        s.to(5);
+        s.next(5);
         vs1trans.equals(getValue(), 4);
         vs1trans.same(getUpdates(), [4]);
         t.endTrans();
 
-        vs1trans.equals(errors.length, 0);
         vs1trans.equals(getValue(), 5);
         vs1trans.same(getUpdates(), [4, 5]);
+        vs1trans.equals(getErrors().length, 0);
 
         unsubscribe();
         vs1trans.end();
@@ -142,12 +114,12 @@ tap.test(p.name, (suite) => {
         const s = new ValueStream('alpha', 4);
 
         const {
-          errors, getValue, getUpdates, unsubscribe,
+          getErrors, getValue, getUpdates, unsubscribe,
         } = watchStream(s);
 
         const t = s.startTrans();
         const t2 = s.startTrans();
-        s.to(5);
+        s.next(5);
 
         vs1trans.equals(getValue(), 4);
         vs1trans.same(getUpdates(), [4]);
@@ -157,9 +129,9 @@ tap.test(p.name, (suite) => {
         vs1trans.same(getUpdates(), [4]);
         t2.endTrans();
 
-        vs1trans.equals(errors.length, 0);
         vs1trans.equals(getValue(), 5);
         vs1trans.same(getUpdates(), [4, 5]);
+        vs1trans.equals(getErrors().length, 0);
 
         unsubscribe();
         vs1trans.end();

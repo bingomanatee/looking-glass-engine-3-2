@@ -1,142 +1,34 @@
-import { identifier } from 'safe-identifier';
 import { BehaviorSubject, Subject } from 'rxjs';
-import { pairwise, map } from 'rxjs/operators';
+import { pairwise } from 'rxjs/operators';
 import { proppify } from '@wonderlandlabs/propper';
-
 import noop from 'lodash/identity';
 import is from 'is';
-import first from 'lodash/first';
-import { ABSENT, has, notAbsent } from './absent';
-import testVSName from './testVSName';
+
+import {
+  ABSENT, hasValue, isAbsent, notAbsent,
+} from './absent';
 import Message from './Message';
+import Value from './Value';
 
 /**
- * syntax note: properties that self-spawn laziy are prefixed with a "$".
- * some are public (like $changes), but most pare private (like _$transes).
+ * ValueStream overlays streaming changes onto Value
+ * by adding a next(value) interface
+ * to request that the value be changed.
+ *
+ * Where simply setting the value property might throw errors,
+ * next both respects transactional logic
+ * and routes errors into the error stream if invalid change is requested.
+ *
+ * syntax note: properties that self-spawn lazily are prefixed with a "$".
+ * some are public (like $changes), but most part private (like _$transes).
  */
 
-class ValueStream {
-  constructor(name = ABSENT, value = ABSENT) {
-    this.name = name;
-    if (notAbsent(value)) {
-      this._$value = value;
-    }
+class ValueStream extends Value {
+  constructor(name = ABSENT, value = ABSENT, filter = ABSENT) {
+    super(name, value, filter);
   }
 
-  /** *********************** IDENTITY  ****************** */
-
-  get name() {
-    return this._name;
-  }
-
-  set name(name) {
-    testVSName(name, 'cannot initialize ValueStream with bad name');
-    this._name = name;
-  }
-
-  get value() {
-    return this.serialize();
-  }
-
-  /**
-   * a private setter for value.
-   * @param item
-   * @private
-   */
-  set _$value(item) {
-    this._value = item;
-  }
-
-  /**
-   * the error data for a prospective value - or the current one if called without parameters
-   * @param value
-   * @returns null || an Exception for bad values
-   */
-  valueErrors(value = ABSENT) {
-    if (notAbsent(value)) {
-      // @TODO: test
-      return null;
-    }
-    return this.valueErrors(this.value);
-  }
-
-  get hasChildren() {
-    return !!this._children;
-  }
-
-  hasValidName() {
-    return this.name === identifier(this.name);
-  }
-
-  /**
-   * the public face of children; a map, if they have been added
-   * @returns {Map|Map<any, any>|null}
-   */
-  get children() {
-    if (!this.hasChildren) {
-      return null;
-    }
-    return this._children;
-  }
-
-  /**
-   * an internal utility that creates a _children map if necessary
-   * @returns {Map}
-   * @private
-   */
-  get _$children() {
-    if (!this.hasChildren) {
-      this._children = new Map();
-    }
-    return this._children;
-  }
-
-  /**
-   * note - this is not to be called directly-it is a child call of property();
-   *
-   * @param name
-   * @param value
-   * @private
-   */
-  _add(name, value) {
-    testVSName(name, `Cannot add a child to valueStream ${this.name}-invalid name`);
-    let childValue = value;
-
-    if (this.has(name)) {
-      throw new Error(`cannot redefine ${name} of ValueStream ${this.name}`);
-    }
-
-    if (!(childValue instanceof ValueStream)) {
-      childValue = new ValueStream(name, value);
-    }
-    childValue.parent = this;
-
-    this._$children.set(name, childValue);
-  }
-
-  has(name) {
-    if (!this.hasChildren) {
-      return false;
-    }
-    return this._children.has(name);
-  }
-
-  serialize() {
-    if (!this.hasChildren) {
-      // @TODO: allow for more advanced serialization
-      return this._value;
-    }
-    const out = {};
-    this._children.forEach((stream, name) => {
-      if (!stream.hasValidName()) {
-        const validName = identifier(name);
-        out[validName] = { [name]: stream.serialize() };
-      } else {
-        out[name] = stream.serialize();
-      }
-    });
-    return out;
-  }
+  /** ********************* CHANGE FLOW ********************** */
 
   /**
    * a read-only synchronous broadcaster of value state.
@@ -151,20 +43,8 @@ class ValueStream {
     return this._changes;
   }
 
-  /** ********************* CHANGE FLOW ********************** */
-
-  /*
-   * queues a change for execution.
-   * Should execute synchronously.
-   *
-   * Must be externally flushed to complete trans.
-   * @param value
-   * @param attrs {Object}
-   * @returns {Message}
-   */
-
-  to(value = ABSENT, attrs = ABSENT) {
-    const msg = this.makeMessage(value, attrs);
+  next(...params) {
+    const msg = this.makeMessage(...params);
     this._$requests.next(msg);
     return msg;
   }
@@ -192,39 +72,46 @@ class ValueStream {
 
   _onRequest(msg) {
     if (msg.complete) {
-      console.log('attempt to re-process a complete message', msg);
-      return;
+      console.log('attempt next re-process a complete message', msg);
+      return msg;
     }
 
     msg.prev = this.value;
-    msg.error = this.valueErrors(msg.value) || msg.error;
-    msg.complete = true;
 
-    if (msg.error) {
+    if (isAbsent(msg.value)) {
+      return msg;
+    }
+
+    try {
+      this._setValue(msg.value);
+    } catch ({ message, errors }) {
+      msg.error = errors || message;
       this.errors.next(msg);
-      return;
     }
-
-    // actually makes the action to execute. impervious to transations.
-    if (notAbsent(msg.value)) {
-      this._$value = msg.value;
+    if (!msg.error) {
+      // this alerts watchers to synchromous updating.
+      // transactional locks are ignored.
       this.$changes.next(msg);
+    } else {
+      return msg;
     }
 
-    // alerts any watchers that there HAS BEEN action taken.
     if (!this.hasTranses) {
+      // alerts watchers that a value has updated UNLESS there are transactional locks.
       this._broadcastChange(msg);
     } else {
-      // note that when transactions are closed an update needs to be sent.
+      // note that when transactions are closed an update needs next be sent.
       this.pendingChanges = true;
     }
+
+    return msg;
   }
 
   /**
-   * sends a signal to any subscribers that the value has been changed.
+   * sends a signal next any subscribers that the value has been changed.
    *
    * @param msg {Message} -- note this is not a significant value because
-   *                         subscribers listen to the value, not the message;
+   *                         subscribers listen next the value, not the message;
    *                         might be useful for tracking.
    * @private
    */
@@ -257,7 +144,6 @@ class ValueStream {
     return this._transes;
   }
 
-
   startTrans() {
     const msg = this.makeMessage(ABSENT, { trans: true });
     this._$transes.add(msg);
@@ -281,7 +167,7 @@ class ValueStream {
     if (!this.__transStream) {
       this.__transStream = new BehaviorSubject(this._$transes.size);
       this.subSet.add(this.__transStream.pipe(pairwise()).subscribe(([a, b]) => {
-        if (this.pendingChanges && a && (!b)) {
+        if (this.pendingChanges && (a && (!b))) {
           this.pendingChanges = false;
           this._broadcastChange();
         }
@@ -289,7 +175,6 @@ class ValueStream {
     }
     return this.__transStream;
   }
-
 
   /** ******************* SUBSCRIPTION ************* */
 
@@ -309,11 +194,7 @@ class ValueStream {
         onUpdate(this);
       },
       onError,
-      () => {
-        if (is.function(onComplete)) {
-          onComplete();
-        }
-      },
+      onComplete,
     );
 
     this.subSet.add(sub);
@@ -335,6 +216,6 @@ class ValueStream {
 
 proppify(ValueStream)
   .addProp('pendingChanges', false, 'boolean')
-  .addProp('subSet', () => new Set());
+  .addProp('subSet', () => new Set()); // a collection of subscriptions to cancel when the valueStream is cancelled.
 
 export default ValueStream;
