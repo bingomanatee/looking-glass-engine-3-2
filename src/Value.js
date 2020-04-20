@@ -16,7 +16,7 @@ class Value {
   constructor(name = ABSENT, value = ABSENT, filter = ABSENT) {
     this.name = name;
     if (notAbsent(value)) {
-      this.value = value;
+      this._setValue(value);
     }
 
     if (hasValue(filter)) {

@@ -49,7 +49,7 @@ class ValueStream extends Value {
     return msg;
   }
 
-  makeMessage(value, attrs = ABSENT) {
+  makeMessage(value = ABSENT, attrs = ABSENT) {
     const changeAttrs = notAbsent(attrs) && is.object(attrs) ? attrs : {};
     return new Message(value, { ...changeAttrs, name: this.name, target: this });
   }

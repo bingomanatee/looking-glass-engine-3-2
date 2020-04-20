@@ -81,6 +81,26 @@ class ValueStore extends ValueStream {
     return this.addStream(...params);
   }
 
+  /**
+   * this will set several store properties at once.
+   * Note, errors
+   * @param obj
+   * @returns {ValueStore}
+   */
+  next(obj) {
+    const t = this.startTrans();
+    Object.keys.forEach((key) => {
+      if (this.streams.has(key)) {
+        this.streams.get(key).next(obj[key]);
+      } else {
+        const msg = this.makeMessage(obj[key], { property: key, error: 'no property with this name' });
+        this.errors.next(msg);
+      }
+    });
+    t.endTrans();
+    return this;
+  }
+
   addStream(property, startValue = ABSENT, filter = ABSENT) {
     if (this.streams.has(property)) {
       throw new Error(`${this.name}: cannot redefine property ${property}`);
@@ -161,3 +181,5 @@ class ValueStore extends ValueStream {
 proppify(ValueStore)
   .addProp('methods', () => new Map())
   .addProp('streams', () => new Map());
+
+export default ValueStore;

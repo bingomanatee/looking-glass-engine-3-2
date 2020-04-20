@@ -18,11 +18,11 @@ tap.test(p.name, (suite) => {
         const { getErrors, unsubscribe } = watchStream(s);
 
         s.next();
-        unsubscribe();
 
         vsRCMissing.equals(getErrors().length, 0);
         vsRCMissing.equals(s.value, 4);
 
+        unsubscribe();
         vsRCMissing.end();
       });
 
