@@ -46,6 +46,10 @@ class ValueStore extends ValueStream {
    */
 
   get value() {
+    return this._genValue();
+  }
+
+  get my() {
     if (hasProxy) {
       if (!this._valueProxy) {
         this._valueProxy = this._genValueProxy();
@@ -55,13 +59,10 @@ class ValueStore extends ValueStream {
     return this._genValue();
   }
 
-  get my() {
-    return this.value;
-  }
-
   _genValueProxy() {
     return new Proxy({}, {
       get(obj, prop) {
+        console.log('======== proxy: getting ', prop, 'from ', this.name, this.streams);
         const stream = this.streams.get(prop);
         if (!stream) {
           return undefined;
@@ -79,26 +80,6 @@ class ValueStore extends ValueStream {
 
   property(...params) {
     return this.addStream(...params);
-  }
-
-  /**
-   * this will set several store properties at once.
-   * Note, errors
-   * @param obj
-   * @returns {ValueStore}
-   */
-  next(obj) {
-    const t = this.startTrans();
-    Object.keys.forEach((key) => {
-      if (this.streams.has(key)) {
-        this.streams.get(key).next(obj[key]);
-      } else {
-        const msg = this.makeMessage(obj[key], { property: key, error: 'no property with this name' });
-        this.errors.next(msg);
-      }
-    });
-    t.endTrans();
-    return this;
   }
 
   addStream(property, startValue = ABSENT, filter = ABSENT) {
@@ -161,6 +142,7 @@ class ValueStore extends ValueStream {
   _genDoProxy() {
     return new Proxy({}, {
       get(obj, method) {
+        console.log('getting proxy for do:', method);
         if (!this.methods.has(method) && /^set.+/.test(method)) {
           return this._virtualSetter(method);
         }
