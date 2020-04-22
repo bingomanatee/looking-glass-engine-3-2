@@ -2,6 +2,7 @@ import { proppify } from '@wonderlandlabs/propper';
 import is from 'is';
 import lGet from 'lodash/get';
 import uFirst from 'lodash/upperFirst';
+import { isReference } from 'rollup-plugin-commonjs/src/ast-utils';
 import ValueStream from './ValueStream';
 import {
   ABSENT, has, hasValue, isAbsent, notAbsent,
@@ -139,16 +140,23 @@ class ValueStore extends ValueStream {
   addMethod(method, fn, options = ABSENT) {
     let bind = false;
     let trans = false;
+    let throwable = false;
     if (hasValue(options) && is.object(options)) {
       bind = lGet(options, 'bind', false);
       trans = lGet(options, 'trans', false);
+      throwable = lGet(options, 'throw', false);
     }
 
     if (this.methods.has(method)) {
       throw new Error(`${this.name}: cannot redefine method ${method}`);
     }
     const methodFn = bind ? fn.bind(this) : (...args) => fn(this, ...args);
-    this.methods.set(method, (...args) => (trans ? this.tryTrans(methodFn, ...args) : this.try(methodFn, ...args)));
+    if (throwable) {
+      // eslint-disable-next-line max-len
+      this.methods.set(method, (...args) => (trans ? this.throwTrans(methodFn, ...args) : this.throwable(methodFn, ...args)));
+    } else {
+      this.methods.set(method, (...args) => (trans ? this.tryTrans(methodFn, ...args) : this.try(methodFn, ...args)));
+    }
     return this;
   }
 
@@ -167,6 +175,63 @@ class ValueStore extends ValueStream {
       this.errors.next(err);
     }
     return out;
+  }
+
+  /**
+   * this method undoes the error trapping of ValueStore;
+   * it interrupts the flow of a method if any errors are detected in the error stream,
+   * and throws that error (or any other thrown error)
+   *
+   * @param fn
+   * @param args
+   * @returns {*}
+   */
+  throwable(fn, ...args) {
+    let thrownFromSub = false;
+    const s = this.subscribe(() => {
+    }, (err) => {
+      thrownFromSub = err;
+      throw err;
+    });
+
+    try {
+      const out = fn(...args);
+      s.unsubscribe();
+      return out;
+    } catch (interrupt) {
+      s.unsubscribe();
+      if (interrupt !== thrownFromSub) {
+        // an error happened that was NOT trapped and rethrown by/from the error stream
+        this.errors.next(interrupt);
+      }
+      throw interrupt;
+    }
+  }
+
+  throwTrans(fn, ...args) {
+    let thrown = false;
+    const trans = this.startTrans();
+    const s = this.subscribe(() => {
+    }, (err) => {
+      thrown = err;
+      throw err;
+    });
+    const startValue = this.value;
+
+    try {
+      const out = fn(...args);
+      s.unsubscribe();
+      trans.endTrans();
+      return out;
+    } catch (interrupt) {
+      s.unsubscribe();
+      trans.endTrans();
+      if (interrupt !== thrown) {
+        // an error happened that was NOT trapped by the error stream
+        this.errors.next(interrupt);
+      }
+      throw interrupt;
+    }
   }
 
   /**
@@ -201,7 +266,9 @@ class ValueStore extends ValueStream {
     const self = this;
     return new Proxy({}, {
       get(obj, method) {
-        if (self.propSetters[method]) return self.propSetters[method];
+        if (self.propSetters[method]) {
+          return self.propSetters[method];
+        }
         return self.methods.get(method);
       },
     });
