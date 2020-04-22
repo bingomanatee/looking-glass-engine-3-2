@@ -1,5 +1,7 @@
 import lodashGet from 'lodash/get';
-    import { proppify } from '@wonderlandlabs/propper';
+import pick from 'lodash/pick';
+
+import { proppify } from '@wonderlandlabs/propper';
 import { notAbsent, has, ABSENT } from './absent';
 
 export default class Message {
@@ -22,6 +24,12 @@ export default class Message {
     } else {
       console.log('message has no target: ,', this);
     }
+  }
+
+  toJSON() {
+    const err = pick(this, 'target,name,value,complete,prev,trans,error'.split(','));
+    if (typeof err.target === 'object' && err.target.name) err.target = err.target.name;
+    return err;
   }
 }
 

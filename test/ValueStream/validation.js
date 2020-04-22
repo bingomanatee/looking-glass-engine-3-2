@@ -33,14 +33,38 @@ tap.test(p.name, (suite) => {
         tvString.same(s.value, 'bob'); // ignores bad data
 
         tvString.same(getErrors(), [
-          { value: 4, error: 'alpha must be a string' },
+          {
+            value: 4,
+            target: 'alpha',
+            name: 'alpha',
+            complete: false,
+            prev: 'bob',
+            trans: false,
+            error: 'alpha must be a string',
+          },
         ]);
 
         s.next('lisa');
         s.next(100);
         tvString.same(getErrors(), [
-          { value: 4, error: 'alpha must be a string' },
-          { value: 100, error: 'alpha must be a string' },
+          {
+            target: 'alpha',
+            name: 'alpha',
+            complete: false,
+            trans: false,
+            prev: 'bob',
+            value: 4,
+            error: 'alpha must be a string',
+          },
+          {
+            target: 'alpha',
+            name: 'alpha',
+            complete: false,
+            trans: false,
+            prev: 'lisa',
+            value: 100,
+            error: 'alpha must be a string',
+          },
         ]);
 
         tvString.same(getUpdates(), ['bob', 'lisa']);
@@ -58,14 +82,38 @@ tap.test(p.name, (suite) => {
         s.next(5);
         tvFn.same(s.value, 1); // ignores bad data
         tvFn.same(getErrors(), [
-          { value: 5, error: 'alpha must be a perfect square' },
+          {
+            value: 5,
+            error: 'alpha must be a perfect square',
+            target: 'alpha',
+            name: 'alpha',
+            complete: false,
+            trans: false,
+            prev: 1,
+          },
         ]);
 
         s.next(-1);
         tvFn.same(s.value, 1); // ignores bad data
         tvFn.same(getErrors(), [
-          { value: 5, error: 'alpha must be a perfect square' },
-          { value: -1, error: 'alpha must be a whole number' },
+          {
+            target: 'alpha',
+            name: 'alpha',
+            complete: false,
+            trans: false,
+            prev: 1,
+            value: 5,
+            error: 'alpha must be a perfect square',
+          },
+          {
+            target: 'alpha',
+            name: 'alpha',
+            complete: false,
+            trans: false,
+            prev: 1,
+            value: -1,
+            error: 'alpha must be a whole number',
+          },
         ]);
 
         s.next(100);

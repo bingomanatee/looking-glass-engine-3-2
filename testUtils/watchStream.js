@@ -3,10 +3,8 @@ const _ = require('lodash');
 module.exports = (s) => {
   const errors = [];
   const es = s.errors.subscribe((msg) => {
-    errors.push({
-      error: _.get(msg, 'error', msg),
-      value: _.get(msg, 'value', msg),
-    });
+    if(msg.toJSON) msg = msg.toJSON();
+    errors.push(msg);
   });
 
   const updates = [];

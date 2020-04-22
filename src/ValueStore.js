@@ -1,27 +1,45 @@
 import { proppify } from '@wonderlandlabs/propper';
 import is from 'is';
+import lGet from 'lodash/get';
+import uFirst from 'lodash/upperFirst';
 import ValueStream from './ValueStream';
 import {
-  ABSENT, hasValue, isAbsent, notAbsent,
+  ABSENT, has, hasValue, isAbsent, notAbsent,
 } from './absent';
+
+import Message from './Message';
 
 const hasProxy = (typeof Proxy !== 'undefined');
 
 class ValueStore extends ValueStream {
-  constructor(name, values) {
+  constructor(name, values = ABSENT, methods = ABSENT) {
     // note - stores have no initial value as such.
     super(name, new Map());
-    if (values && is.object(values)) {
+    if (hasValue(values) && is.object(values)) {
       this._initValues(values);
     }
+
+    if (hasValue(methods) && is.object(methods)) {
+      this._initMethods(methods);
+    }
+  }
+
+  _initMethods(methods) {
+    Object.keys(methods).forEach((methodName) => {
+      const definition = methods[methodName];
+      if (Array.isArray(definition)) {
+        this.addMethod(methodName, ...definition);
+      } else {
+        this.addMethod(methodName, definition);
+      }
+    });
   }
 
   _initValues(values) {
     Object.keys(values).forEach((property) => {
       const definition = values[property];
       if (Array.isArray(definition)) {
-        const [value, type] = definition;
-        this.addStream(property, value, type);
+        this.addStream(property, ...definition);
       } else {
         this.addStream(property, definition);
       }
@@ -42,7 +60,6 @@ class ValueStore extends ValueStream {
   /**
    * the Value of the ValueStore is the summation of its' streams.
    * the value get return is optimized as a proxy to those pairs expressed as an object.
-   * This used to only be a quality of my; now my and value are identical.
    */
 
   get value() {
@@ -60,10 +77,10 @@ class ValueStore extends ValueStream {
   }
 
   _genValueProxy() {
+    const self = this;
     return new Proxy({}, {
       get(obj, prop) {
-        console.log('======== proxy: getting ', prop, 'from ', this.name, this.streams);
-        const stream = this.streams.get(prop);
+        const stream = self.streams.get(prop);
         if (!stream) {
           return undefined;
         }
@@ -90,7 +107,10 @@ class ValueStore extends ValueStream {
     this.subSet.add(stream.subscribe(() => {
       this.next(this.value);
     }, (err) => {
-      this.error.next({
+      if (err instanceof Message) {
+        err = err.toJSON();
+      }
+      this.errors.next({
         store: this.name,
         source: stream.name,
         error: err,
@@ -98,61 +118,97 @@ class ValueStore extends ValueStream {
     }));
 
     this.streams.set(property, stream);
-
+    delete this._propSetters;
+    if (!hasProxy) {
+      delete this._do;
+    }
     return this;
   }
 
   /* *********** METHODS *************** */
 
+  method(...params) {
+    return this.addMethod(...params);
+  }
+
   /**
    * @param method {String}
    * @param fn {function}
-   * @param bind {Boolean}
+   * @param bind {Object}
    */
-  method(method, fn, bind = false) {
+  addMethod(method, fn, options = ABSENT) {
+    let bind = false;
+    let trans = false;
+    if (hasValue(options) && is.object(options)) {
+      bind = lGet(options, 'bind', false);
+      trans = lGet(options, 'trans', false);
+    }
+
     if (this.methods.has(method)) {
       throw new Error(`${this.name}: cannot redefine method ${method}`);
     }
-    if (bind) {
-      this.methods.add(method, fn.bind(this));
-    } else {
-      this.methods.add(method, (...args) => method(this, ...args));
-    }
+    const methodFn = bind ? fn.bind(this) : (...args) => fn(this, ...args);
+    this.methods.set(method, (...args) => (trans ? this.tryTrans(methodFn, ...args) : this.try(methodFn, ...args)));
+    return this;
   }
 
+  tryTrans(fn, ...args) {
+    const trans = this.startTrans();
+    const out = this.try(fn, ...args);
+    trans.endTrans();
+    return out;
+  }
+
+  try(fn, ...args) {
+    let out;
+    try {
+      out = fn(...args);
+    } catch (err) {
+      this.errors.next(err);
+    }
+    return out;
+  }
+
+  /**
+   * do or do not --- there is no try!
+   * @returns {Object|Proxy}
+   */
   get do() {
-    if (hasProxy) {
-      if (!this._do) {
+    if (!this._do) {
+      console.log('hasProxy', hasProxy);
+      if (hasProxy) {
         this._do = this._genDoProxy();
+      } else {
+        this._do = this._genDo();
       }
-      return this._do;
+      console.log('set _do as  -- ', this._do);
     }
-    return this._genDo();
+    return this._do;
   }
 
-  _virtualSetter(method) {
-    const e = /^set(.)(.*)$/.exec(method);
-    const name = e[1].toLowerCase() + e[2];
-    if (this.streams.has(name)) {
-      return (value) => this.streams.get(name).next(value);
+  get propSetters() {
+    if (!this._propSetters) {
+      this._propSetters = {};
+      this.streams.forEach((stream) => {
+        const name = `set${uFirst(stream.name)}`;
+        this.propSetters[name] = (value) => this.try(() => stream.next(value));
+      });
     }
-    throw new Error(`no setter for ${name}`);
+    return this._propSetters;
   }
 
   _genDoProxy() {
+    const self = this;
     return new Proxy({}, {
       get(obj, method) {
-        console.log('getting proxy for do:', method);
-        if (!this.methods.has(method) && /^set.+/.test(method)) {
-          return this._virtualSetter(method);
-        }
-        return this.methods.get(method);
+        if (self.propSetters[method]) return self.propSetters[method];
+        return self.methods.get(method);
       },
     });
   }
 
   _genDo() {
-    const out = {};
+    const out = { ...this.propSetters };
     this.methods.forEach((method, name) => {
       out[name] = method;
     });
