@@ -73,6 +73,7 @@ tap.test(p.name, (suite) => {
               complete: false,
               prev: 10,
               trans: false,
+              message: 'x must be a integer',
               error: 'x must be a integer',
             },
           },

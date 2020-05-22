@@ -1,4 +1,5 @@
 import lFlattenDeep from 'lodash/flattenDeep';
+import every from 'lodash/every';
 import is from 'is';
 import { proppify } from '@wonderlandlabs/propper';
 import testVSName from './testVSName';
@@ -6,6 +7,7 @@ import {
   ABSENT, hasValue, isAbsent, notAbsent,
 } from './absent';
 
+const NOT_RE = /^!(.*)$/;
 /**
  * Value is a simple name/value record.
  * The only remarkable quality is that it has the options for filtering the input next the value
@@ -15,8 +17,11 @@ import {
 class Value {
   constructor(name = ABSENT, value = ABSENT, filter = ABSENT) {
     this.name = name;
-    if (notAbsent(value)) {
+    this._value = ABSENT;
+    try {
       this._setValue(value);
+    } catch (err) {
+      this._value = ABSENT;
     }
 
     if (hasValue(filter)) {
@@ -39,7 +44,7 @@ class Value {
     try {
       testVSName(this.name);
       return true;
-    } catch (eror) {
+    } catch (err) {
       return false;
     }
   }
@@ -47,6 +52,9 @@ class Value {
   /** *********************** VALUE, FILTER  ****************** */
 
   get value() {
+    if (this._value === ABSENT) {
+      return undefined;
+    }
     return this._value;
   }
 
@@ -61,8 +69,8 @@ class Value {
       this._value = item;
     } else {
       if (Array.isArray(errors)) errors = errors.join(', ');
-      const err = new Error(`attempt to set ${this.name}to bad value`);
-      err.errors = errors;
+      const err = new Error(`attempt to set ${this.name} to bad value`);
+      err.error = errors;
       throw err;
     }
   }
@@ -70,18 +78,19 @@ class Value {
   /**
    * the error data for a prospective value
    * - or the current one if called without parameters.
+   *
    * @param value
-   * @returns null || an Exception for bad values
+   * @param singleError {boolean} if possible return only error as a single value, not an array
+   * @returns {null|boolean|*}
    */
-  validate(value = ABSENT, permute = false) {
-    if (isAbsent(value)) {
-      if (isAbsent(this.value)) {
-        return null;
-      }
-      return this.validate(this.value);
-    }
-
+  validate(value = ABSENT, singleError = false) {
     try {
+      if (isAbsent(value)) {
+        value = this.value;
+      }
+      if (isAbsent(value)) {
+        return singleError ? null : [];
+      }
       if ((!hasValue(this.filter)) || isAbsent(value)) {
         return false; // ??
       }
@@ -91,13 +100,9 @@ class Value {
       // however an array of same is an option,so we coerce the filter
       // into an array and reduce it below.
 
-      const errors = filterList.reduce((out, filter) => {
-        const err = this._validateFilter(filter, value, out);
-        if (err) return [...out, err];
-        return out;
-      }, []);
+      const errors = this._validateList(filterList, value);
 
-      if (!permute) return errors;
+      if (!singleError) return errors;
 
       if (!errors.length) {
         return false;
@@ -105,23 +110,66 @@ class Value {
       if (errors.length === 1) {
         return errors.pop();
       }
+      return errors;
     } catch (err) {
       console.log('error validating type:', err);
     }
     return false;
   }
 
+  _validateList(tests, value) {
+ /*   if (is.string(tests[0]) && /^or|\||\|\|$/.test(tests[0])) {
+      return this._validateOrList(tests.slice(1), value);
+    }
+
+    if (is.string(tests[0]) && /^not|!$/.test(tests[0])) {
+      return this._validateNotList(tests.slice(1), value);
+    }*/
+
+    return tests.reduce((out, filter) => {
+      const err = this._validateFilter(filter, value, out);
+      if (err) return [...out, err];
+      return out;
+    }, []);
+  }
+/*
+  _validateOrList(filterList, value) {
+    const errors = filterList.map((filter) => this._validateFilter(filter, value));
+    if (every(errors)) {
+      return errors;
+    }
+    return [];
+  }
+
+  _validateNotList(filterList, value) {
+    const errors = this._validateList(filterList, value);
+    if (errors.length) {
+      return [];
+    }
+    return ['failed not condition'];
+  }*/
+
   _validateFilter(filter, value, errors) {
     if (is.function(filter)) {
       return filter(value, errors, this);
-    }
+    } if (is.string(filter)) {
+      if (NOT_RE.test(filter)) {
+        const m = NOT_RE.exec(filter);
+        const subFilter = m[1];
+        const failure = this._validateFilter(subFilter, value, errors);
+        if (failure) {
+          return false;
+        }
+        return `${this.name} cannot be a ${subFilter}`;
+      }
 
-    if (!(is[filter])) {
-      return `cannot parse type ${filter}`;
-    }
+      if (!(is[filter])) {
+        return `cannot parse type ${filter}`;
+      }
 
-    if (!is[filter](value)) {
-      return `${this.name} must be a ${filter}`;
+      if (!is[filter](value)) {
+        return `${this.name} must be a ${filter}`;
+      }
     }
 
     return false;

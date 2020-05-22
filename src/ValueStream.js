@@ -1,5 +1,5 @@
 import { BehaviorSubject, Subject } from 'rxjs';
-import { pairwise } from 'rxjs/operators';
+import { pairwise, distinct } from 'rxjs/operators';
 import { proppify } from '@wonderlandlabs/propper';
 import noop from 'lodash/identity';
 import is from 'is';
@@ -43,10 +43,43 @@ class ValueStream extends Value {
     return this._changes;
   }
 
+  /**
+   * ordinarily you pass a single value to next --- the one you want the stream to be next.
+   * However you can
+   * @param params
+   * @returns {*|boolean}
+   */
   next(...params) {
-    const msg = this.makeMessage(...params);
-    this._$requests.next(msg);
+    let msg = false;
+    try {
+      msg = this.makeMessage(...params);
+      if (!this.isComplete) {
+        this.$requests.next(msg);
+      } else {
+        msg.error = 'Attempt to update a completed stream';
+      }
+    } catch (err) {
+      msg = err;
+      msg.error = err.message;
+    }
     return msg;
+  }
+
+  nextPromise(...params) {
+    let msg;
+    try {
+      msg = this.next(...params);
+    } catch (err) {
+      msg = err;
+      msg.error = err.message;
+    }
+    return new Promise((good, fail) => {
+      if (msg.error) {
+        fail(msg);
+      } else {
+        good(msg);
+      }
+    });
   }
 
   makeMessage(value = ABSENT, attrs = ABSENT) {
@@ -54,12 +87,13 @@ class ValueStream extends Value {
     return new Message(value, { ...changeAttrs, name: this.name, target: this });
   }
 
-  get _$requests() {
+  get $requests() {
     if (!this.__requests) {
       this.__requests = new Subject();
-      this.subSet.add(this.__requests.subscribe(this._onRequest.bind(this), (err) => {
-        console.log('request submission error:', err);
-      }));
+      this.subSet.add(this.__requests.subscribe(this._onRequest.bind(this),
+        (err) => {
+          console.log('request submission error:', err);
+        }));
     }
     return this.__requests;
   }
@@ -71,21 +105,19 @@ class ValueStream extends Value {
    */
 
   _onRequest(msg) {
-    if (msg.complete) {
-      console.log('attempt next re-process a complete message', msg);
+    if (msg.complete || isAbsent(msg.value)) {
       return msg;
     }
 
     msg.prev = this.value;
-
-    if (isAbsent(msg.value)) {
-      return msg;
+    if (msg.trans) {
+      msg.startTrans();
     }
 
     try {
       this._setValue(msg.value);
-    } catch ({ message, errors }) {
-      msg.error = errors || message;
+    } catch ({ message, error }) {
+      msg.error = error || message;
       this.errors.next(msg);
     }
     if (!msg.error) {
@@ -93,6 +125,9 @@ class ValueStream extends Value {
       // transactional locks are ignored.
       this.$changes.next(msg);
     } else {
+      if (msg.trans) {
+        msg.endTrans();
+      }
       return msg;
     }
 
@@ -104,6 +139,9 @@ class ValueStream extends Value {
       this.pendingChanges = true;
     }
 
+    if (msg.trans) {
+      msg.endTrans();
+    }
     return msg;
   }
 
@@ -119,9 +157,14 @@ class ValueStream extends Value {
     this._$updater.next(msg);
   }
 
+  /**
+   * a stream that expresses any errors; generally validation failures but
+   * also any other trapped errors in the system.
+   * @returns {Observable<unknown>}
+   */
   get errors() {
     if (!this._errors) {
-      this._errors = new Subject();
+      this._errors = new Subject().pipe(distinct());
     }
     return this._errors;
   }
@@ -129,7 +172,10 @@ class ValueStream extends Value {
   /** *************** TRANSACTIONALITY *************** */
 
   get hasTranses() {
-    return !!this._transes;
+    if (!this._transes) {
+      return false;
+    }
+    return this._transes.size;
   }
 
   /**
@@ -144,8 +190,10 @@ class ValueStream extends Value {
     return this._transes;
   }
 
-  startTrans() {
-    const msg = this.makeMessage(ABSENT, { trans: true });
+  startTrans(msg) {
+    if (!msg) {
+      msg = this.makeMessage(ABSENT, { trans: true });
+    }
     this._$transes.add(msg);
     this._broadcastTrans();
     return msg;
@@ -201,7 +249,12 @@ class ValueStream extends Value {
     return sub;
   }
 
+  get isComplete() {
+    return !!this._completed;
+  }
+
   complete() {
+    this._completed = true;
     try {
       const subs = Array.from(this.subSet);
       subs.forEach((sub) => {

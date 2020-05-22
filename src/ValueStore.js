@@ -1,13 +1,12 @@
-import { proppify } from '@wonderlandlabs/propper';
+import {proppify} from '@wonderlandlabs/propper';
 import is from 'is';
 import lGet from 'lodash/get';
 import uFirst from 'lodash/upperFirst';
-import { isReference } from 'rollup-plugin-commonjs/src/ast-utils';
 import ValueStream from './ValueStream';
 import {
   ABSENT, has, hasValue, isAbsent, notAbsent,
 } from './absent';
-
+import {inspect} from 'util';
 import Message from './Message';
 
 const hasProxy = (typeof Proxy !== 'undefined');
@@ -15,7 +14,7 @@ const hasProxy = (typeof Proxy !== 'undefined');
 class ValueStore extends ValueStream {
   constructor(name, values = ABSENT, methods = ABSENT) {
     // note - stores have no initial value as such.
-    super(name, new Map());
+    super(name);
     if (hasValue(values) && is.object(values)) {
       this._initValues(values);
     }
@@ -23,6 +22,7 @@ class ValueStore extends ValueStream {
     if (hasValue(methods) && is.object(methods)) {
       this._initMethods(methods);
     }
+    this.next(this.value);
   }
 
   _initMethods(methods) {
@@ -96,8 +96,20 @@ class ValueStore extends ValueStream {
     return out;
   }
 
+  clearCache() {
+    delete this._valueProxy;
+    delete this._do;
+    delete this._propSetters;
+  }
+
   property(...params) {
     return this.addStream(...params);
+  }
+
+  subscribe(onValue, ...args) {
+    return super.subscribe(() => {
+      onValue(this);
+    }, ...args);
   }
 
   addStream(property, startValue = ABSENT, filter = ABSENT) {
@@ -140,20 +152,20 @@ class ValueStore extends ValueStream {
   addMethod(method, fn, options = ABSENT) {
     let bind = false;
     let trans = false;
-    let throwable = false;
+    let throws = false;
     if (hasValue(options) && is.object(options)) {
       bind = lGet(options, 'bind', false);
       trans = lGet(options, 'trans', false);
-      throwable = lGet(options, 'throw', false);
+      throws = lGet(options, 'throws', false);
     }
 
     if (this.methods.has(method)) {
       throw new Error(`${this.name}: cannot redefine method ${method}`);
     }
     const methodFn = bind ? fn.bind(this) : (...args) => fn(this, ...args);
-    if (throwable) {
+    if (throws) {
       // eslint-disable-next-line max-len
-      this.methods.set(method, (...args) => (trans ? this.throwTrans(methodFn, ...args) : this.throwable(methodFn, ...args)));
+      this.methods.set(method, (...args) => (trans ? this.throwTrans(methodFn, ...args) : this.throws(methodFn, ...args)));
     } else {
       this.methods.set(method, (...args) => (trans ? this.tryTrans(methodFn, ...args) : this.try(methodFn, ...args)));
     }
@@ -186,52 +198,48 @@ class ValueStore extends ValueStream {
    * @param args
    * @returns {*}
    */
-  throwable(fn, ...args) {
-    let thrownFromSub = false;
-    const s = this.subscribe(() => {
+  throws(fn, ...args) {
+    let thrown = false;
+    let out;
+    let s = this.subscribe(() => {
     }, (err) => {
-      thrownFromSub = err;
-      throw err;
+      thrown = err;
     });
 
     try {
-      const out = fn(...args);
-      s.unsubscribe();
-      return out;
+      out = fn(...args);
     } catch (interrupt) {
       s.unsubscribe();
-      if (interrupt !== thrownFromSub) {
+      s = null;
+      if (interrupt !== thrown) {
         // an error happened that was NOT trapped and rethrown by/from the error stream
         this.errors.next(interrupt);
+        thrown = interrupt;
       }
-      throw interrupt;
     }
+    if (s) {
+      s.unsubscribe();
+    }
+    if (thrown) {
+      throw thrown;
+    }
+    return out;
   }
 
   throwTrans(fn, ...args) {
-    let thrown = false;
+    let out;
     const trans = this.startTrans();
-    const s = this.subscribe(() => {
-    }, (err) => {
-      thrown = err;
-      throw err;
-    });
-    const startValue = this.value;
-
+    let thrown = false;
     try {
-      const out = fn(...args);
-      s.unsubscribe();
-      trans.endTrans();
-      return out;
-    } catch (interrupt) {
-      s.unsubscribe();
-      trans.endTrans();
-      if (interrupt !== thrown) {
-        // an error happened that was NOT trapped by the error stream
-        this.errors.next(interrupt);
-      }
-      throw interrupt;
+      out = this.throws(fn, ...args);
+    } catch (err) {
+      thrown = err;
     }
+    trans.endTrans();
+    if (thrown) {
+      throw thrown;
+    }
+    return out;
   }
 
   /**
@@ -240,23 +248,27 @@ class ValueStore extends ValueStream {
    */
   get do() {
     if (!this._do) {
-      console.log('hasProxy', hasProxy);
       if (hasProxy) {
         this._do = this._genDoProxy();
       } else {
         this._do = this._genDo();
       }
-      console.log('set _do as  -- ', this._do);
     }
     return this._do;
   }
 
-  get propSetters() {
+  get _$propSetters() {
     if (!this._propSetters) {
       this._propSetters = {};
       this.streams.forEach((stream) => {
         const name = `set${uFirst(stream.name)}`;
-        this.propSetters[name] = (value) => this.try(() => stream.next(value));
+        this._propSetters[name] = (value) => stream.next(value);
+        const tName = `${name}_ot`;
+        this._propSetters[tName] = (value) => {
+          const out =  this.throws(() => this._propSetters[name](value));
+          console.log(tName, 'returned', out);
+          return out;
+        };
       });
     }
     return this._propSetters;
@@ -266,8 +278,8 @@ class ValueStore extends ValueStream {
     const self = this;
     return new Proxy({}, {
       get(obj, method) {
-        if (self.propSetters[method]) {
-          return self.propSetters[method];
+        if (self._$propSetters[method]) {
+          return self._$propSetters[method];
         }
         return self.methods.get(method);
       },
@@ -275,7 +287,7 @@ class ValueStore extends ValueStream {
   }
 
   _genDo() {
-    const out = { ...this.propSetters };
+    const out = {...this._$propSetters};
     this.methods.forEach((method, name) => {
       out[name] = method;
     });
