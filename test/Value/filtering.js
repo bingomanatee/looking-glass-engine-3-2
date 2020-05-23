@@ -2,7 +2,7 @@
 const tap = require('tap');
 const p = require('../../package.json');
 
-const {Value, ABSENT} = require('../../lib');
+const { Value, validators } = require('../../lib');
 
 /**
  *  testing basic name, value, deserialization

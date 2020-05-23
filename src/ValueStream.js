@@ -2,7 +2,6 @@ import { BehaviorSubject, Subject } from 'rxjs';
 import { pairwise, distinct } from 'rxjs/operators';
 import { proppify } from '@wonderlandlabs/propper';
 import noop from 'lodash/identity';
-import is from 'is';
 
 import {
   ABSENT, hasValue, isAbsent, notAbsent,
@@ -83,7 +82,7 @@ class ValueStream extends Value {
   }
 
   makeMessage(value = ABSENT, attrs = ABSENT) {
-    const changeAttrs = notAbsent(attrs) && is.object(attrs) ? attrs : {};
+    const changeAttrs = hasValue(attrs) && typeof (attrs) === 'object' ? attrs : {};
     return new Message(value, { ...changeAttrs, name: this.name, target: this });
   }
 

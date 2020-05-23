@@ -1,11 +1,10 @@
 import lFlattenDeep from 'lodash/flattenDeep';
-import every from 'lodash/every';
-import is from 'is';
 import { proppify } from '@wonderlandlabs/propper';
 import testVSName from './testVSName';
 import {
-  ABSENT, hasValue, isAbsent, notAbsent,
+  ABSENT, hasValue, isAbsent,
 } from './absent';
+import validators from './validators';
 
 const NOT_RE = /^!(.*)$/;
 /**
@@ -118,13 +117,13 @@ class Value {
   }
 
   _validateList(tests, value) {
- /*   if (is.string(tests[0]) && /^or|\||\|\|$/.test(tests[0])) {
+    /*   if (is.string(tests[0]) && /^or|\||\|\|$/.test(tests[0])) {
       return this._validateOrList(tests.slice(1), value);
     }
 
     if (is.string(tests[0]) && /^not|!$/.test(tests[0])) {
       return this._validateNotList(tests.slice(1), value);
-    }*/
+    } */
 
     return tests.reduce((out, filter) => {
       const err = this._validateFilter(filter, value, out);
@@ -132,7 +131,7 @@ class Value {
       return out;
     }, []);
   }
-/*
+  /*
   _validateOrList(filterList, value) {
     const errors = filterList.map((filter) => this._validateFilter(filter, value));
     if (every(errors)) {
@@ -147,12 +146,12 @@ class Value {
       return [];
     }
     return ['failed not condition'];
-  }*/
+  } */
 
   _validateFilter(filter, value, errors) {
-    if (is.function(filter)) {
+    if (typeof (filter) === 'function') {
       return filter(value, errors, this);
-    } if (is.string(filter)) {
+    } if (typeof (filter) === 'string') {
       if (NOT_RE.test(filter)) {
         const m = NOT_RE.exec(filter);
         const subFilter = m[1];
@@ -163,11 +162,15 @@ class Value {
         return `${this.name} cannot be a ${subFilter}`;
       }
 
-      if (!(is[filter])) {
+      const test = validators(filter);
+
+      if (!test) {
         return `cannot parse type ${filter}`;
       }
 
-      if (!is[filter](value)) {
+      const result = test(value);
+
+      if (result) {
         return `${this.name} must be a ${filter}`;
       }
     }

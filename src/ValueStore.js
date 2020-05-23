@@ -1,12 +1,10 @@
-import {proppify} from '@wonderlandlabs/propper';
-import is from 'is';
+import { proppify } from '@wonderlandlabs/propper';
 import lGet from 'lodash/get';
 import uFirst from 'lodash/upperFirst';
 import ValueStream from './ValueStream';
 import {
-  ABSENT, has, hasValue, isAbsent, notAbsent,
+  ABSENT, hasValue,
 } from './absent';
-import {inspect} from 'util';
 import Message from './Message';
 
 const hasProxy = (typeof Proxy !== 'undefined');
@@ -15,11 +13,11 @@ class ValueStore extends ValueStream {
   constructor(name, values = ABSENT, methods = ABSENT) {
     // note - stores have no initial value as such.
     super(name);
-    if (hasValue(values) && is.object(values)) {
+    if (hasValue(values) && typeof (values) === 'object') {
       this._initValues(values);
     }
 
-    if (hasValue(methods) && is.object(methods)) {
+    if (hasValue(methods) && typeof (methods) === 'object') {
       this._initMethods(methods);
     }
     this.next(this.value);
@@ -112,11 +110,11 @@ class ValueStore extends ValueStream {
     }, ...args);
   }
 
-  addStream(property, startValue = ABSENT, filter = ABSENT) {
-    if (this.streams.has(property)) {
-      throw new Error(`${this.name}: cannot redefine property ${property}`);
+  addStream(name, startValue = ABSENT, filter = ABSENT) {
+    if (this.streams.has(name)) {
+      throw new Error(`${this.name}: cannot redefine property ${name}`);
     }
-    const stream = new ValueStream(property, startValue, filter);
+    const stream = new ValueStream(name, startValue, filter);
     this.subSet.add(stream.subscribe(() => {
       this.next(this.value);
     }, (err) => {
@@ -130,11 +128,10 @@ class ValueStore extends ValueStream {
       });
     }));
 
-    this.streams.set(property, stream);
+    this.streams.set(name, stream);
     delete this._propSetters;
-    if (!hasProxy) {
-      delete this._do;
-    }
+
+    this.clearCache();
     return this;
   }
 
@@ -150,14 +147,9 @@ class ValueStore extends ValueStream {
    * @param bind {Object}
    */
   addMethod(method, fn, options = ABSENT) {
-    let bind = false;
-    let trans = false;
-    let throws = false;
-    if (hasValue(options) && is.object(options)) {
-      bind = lGet(options, 'bind', false);
-      trans = lGet(options, 'trans', false);
-      throws = lGet(options, 'throws', false);
-    }
+    const bind = lGet(options, 'bind', false);
+    const trans = lGet(options, 'trans', false);
+    const throws = lGet(options, 'throws', false);
 
     if (this.methods.has(method)) {
       throw new Error(`${this.name}: cannot redefine method ${method}`);
@@ -167,12 +159,13 @@ class ValueStore extends ValueStream {
       // eslint-disable-next-line max-len
       this.methods.set(method, (...args) => (trans ? this.throwTrans(methodFn, ...args) : this.throws(methodFn, ...args)));
     } else {
-      this.methods.set(method, (...args) => (trans ? this.tryTrans(methodFn, ...args) : this.try(methodFn, ...args)));
+      this.methods.set(method, (...args) => (trans ? this._tryTrans(methodFn, ...args) : this.try(methodFn, ...args)));
     }
+    this.clearCache();
     return this;
   }
 
-  tryTrans(fn, ...args) {
+  _tryTrans(fn, ...args) {
     const trans = this.startTrans();
     const out = this.try(fn, ...args);
     trans.endTrans();
@@ -265,7 +258,7 @@ class ValueStore extends ValueStream {
         this._propSetters[name] = (value) => stream.next(value);
         const tName = `${name}_ot`;
         this._propSetters[tName] = (value) => {
-          const out =  this.throws(() => this._propSetters[name](value));
+          const out = this.throws(() => this._propSetters[name](value));
           console.log(tName, 'returned', out);
           return out;
         };
@@ -287,7 +280,7 @@ class ValueStore extends ValueStream {
   }
 
   _genDo() {
-    const out = {...this._$propSetters};
+    const out = { ...this._$propSetters };
     this.methods.forEach((method, name) => {
       out[name] = method;
     });
