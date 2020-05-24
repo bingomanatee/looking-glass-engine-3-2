@@ -156,3 +156,25 @@ Properties cannot be redefined (throws error once a name is taken).
 
 This method creates a ValueStream and attaches it to the streams collection. 
 
+## VIRTUALS
+
+Virtuals are computed values that are derived from the store. They are only computed when retrieved. 
+The function that defines a virtual *cannot* change the store. a virtual can call another virtual; but 
+any circular reference (a calls b which calls a) will throw an error. 
+
+Virtuals, like property values, can be accessed off the `.my` proxy. 
+
+```javascript
+
+const coord = new ValueStore('coord2D', { x: 0, y: 0 }, {}, {
+  magnitude: (store) => {
+    return Math.sqrt(store.my.x ** 2 + store.my.y ** 2);
+  },
+});
+
+coord.do.setX(10);
+coord.do.setY(20);
+console.log('magnitude:', coord.my.magnitude)
+// 'magnitude:' 22.360679774997897
+
+```

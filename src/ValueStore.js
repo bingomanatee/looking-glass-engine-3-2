@@ -2,25 +2,45 @@ import { proppify } from '@wonderlandlabs/propper';
 import lGet from 'lodash/get';
 import uFirst from 'lodash/upperFirst';
 import ValueStream from './ValueStream';
-import {
-  ABSENT, hasValue,
-} from './absent';
+import validators from './validators';
+import { ABSENT } from './absent';
 import Message from './Message';
 
 const hasProxy = (typeof Proxy !== 'undefined');
 
 class ValueStore extends ValueStream {
-  constructor(name, values = ABSENT, methods = ABSENT) {
+  constructor(name, values = ABSENT, methods = ABSENT, virtuals = ABSENT) {
     // note - stores have no initial value as such.
     super(name);
-    if (hasValue(values) && typeof (values) === 'object') {
+    if (validators.is('object', values)) {
       this._initValues(values);
     }
 
-    if (hasValue(methods) && typeof (methods) === 'object') {
+    if (validators.is('object', methods)) {
       this._initMethods(methods);
     }
+
+    if (validators.is('object', virtuals)) {
+      this._initVirtuals(virtuals);
+    }
     this.next(this.value);
+  }
+
+  _initVirtuals(virtuals) {
+    Object.keys(virtuals).forEach((name) => {
+      const fn = virtuals[name];
+      this.addVirtual(name, fn);
+    });
+  }
+
+  addVirtual(name, fn, redefine = false) {
+    if (!validators.is('function', fn)) {
+      throw new Error('non-function supplied as virtual value');
+    }
+    if ((!redefine) && this._$virtuals.has(name)) {
+      throw new Error(`cannot redefine ${name}`);
+    }
+    this._$virtuals.set(name, (...args) => this.derive(fn, name, ...args));
   }
 
   _initMethods(methods) {
@@ -54,7 +74,84 @@ class ValueStore extends ValueStream {
     this.streams.get(name).next(value);
   }
 
-  /* VALUE, PROPERTY */
+  /* ====================== VIRTUALS ===================== */
+
+  get _$virtuals() {
+    if (!this._virtuals) {
+      this._virtuals = new Map();
+    }
+    return this._virtuals;
+  }
+
+  get hasVirtuals() {
+    return this._virtuals && this._$virtuals.size;
+  }
+
+  hasVirtual(name) {
+    if (!this.hasVirtuals) {
+      return false;
+    }
+    return this._$virtuals.has(name);
+  }
+
+  /**
+   * returns a value from the store.
+   * given that this is intended to be non-invasive to the store
+   * derive will throw an error if any attempts are made to change the store
+   * (i.e., any messages are generated) during the execution of the function.
+   * @param fn {function}
+   * @param name {String}
+   * @param args {Array}
+   */
+  derive(fn, name, ...args) {
+    if (!validators.is('function', fn)) {
+      throw new Error('derive requires a function');
+    }
+    const msg = this.makeMessage({ name, fn }, { virtual: true, blocker: true });
+    // prevent circularity
+    const circular = this._getBlocker(name);
+
+    if (circular) {
+      msg.error = { error: 'circular virtual', circular };
+      throw msg;
+    }
+
+    this.block(msg);
+    const out = this._try(fn, this, ...args);
+    this.unblock(msg);
+
+    return out;
+  }
+
+  _getBlocker(name) {
+    let blocker = false;
+    if (this.hasBlockers) {
+      this._$blockers.forEach((msg) => {
+        if (!blocker && msg.virtual && msg.name === name) {
+          blocker = msg;
+        }
+      });
+    }
+    return blocker;
+  }
+
+  /**
+   *
+   * @returns {Map}
+   */
+  deriveAll(keys = ABSENT) {
+    const registry = new Map();
+    this._$virtuals.forEach((fn, name) => {
+      if (Array.isArray(keys) && !keys.includes(name)) {
+        return;
+      }
+      registry.set(name, this._try(fn, this));
+    });
+
+    return registry;
+  }
+
+  /* ==================== VALUE, PROPERTY ================ */
 
   /**
    * the Value of the ValueStore is the summation of its' streams.
@@ -79,18 +176,37 @@ class ValueStore extends ValueStream {
     const self = this;
     return new Proxy({}, {
       get(obj, prop) {
-        const stream = self.streams.get(prop);
-        if (!stream) {
-          return undefined;
+        if (self.streams.has(prop)) {
+          const stream = self.streams.get(prop);
+          return stream.value;
         }
-        return stream.value;
+        if (self.hasVirtuals) {
+          if (self._$virtuals.has(prop)) {
+            return self._$virtuals.get(prop)();
+          }
+        }
+        return undefined;
       },
     });
   }
 
   _genValue() {
     const out = {};
-    this.streams.forEach((stream) => out[stream.name] = stream.value);
+    this.streams.forEach((stream) => {
+      out[stream.name] = stream.value;
+    });
+    if (!this.hasBlockers) {
+      const virtuals = this.deriveAll();
+      virtuals.forEach((value, name) => {
+        try {
+          if (!out.hasOwnProperty(name)) {
+            out[name] = value;
+          }
+        } catch (err) {
+          console.error('cannot attach virtual - conflicts with existing stream', name);
+        }
+      });
+    }
     return out;
   }
 
@@ -115,6 +231,8 @@ class ValueStore extends ValueStream {
       throw new Error(`${this.name}: cannot redefine property ${name}`);
     }
     const stream = new ValueStream(name, startValue, filter);
+    stream.parent = this;
+
     this.subSet.add(stream.subscribe(() => {
       this.next(this.value);
     }, (err) => {
@@ -166,13 +284,23 @@ class ValueStore extends ValueStream {
   }
 
   _tryTrans(fn, ...args) {
+    if (this.hasBlockers) {
+      throw new Error('cannot execute methods while blocked');
+    }
     const trans = this.startTrans();
     const out = this.try(fn, ...args);
-    trans.endTrans();
+    this.endTrans(trans);
     return out;
   }
 
   try(fn, ...args) {
+    if (this.hasBlockers) {
+      throw new Error('cannot execute methods while blocked');
+    }
+    return this._try(fn, ...args);
+  }
+
+  _try(fn, ...args) {
     let out;
     try {
       out = fn(...args);
@@ -192,6 +320,9 @@ class ValueStore extends ValueStream {
    * @returns {*}
    */
   throws(fn, ...args) {
+    if (this.hasBlockers) {
+      throw new Error('cannot execute methods while blocked');
+    }
     let thrown = false;
     let out;
     let s = this.subscribe(() => {
@@ -220,6 +351,9 @@ class ValueStore extends ValueStream {
   }
 
   throwTrans(fn, ...args) {
+    if (this.hasBlockers) {
+      throw new Error('cannot execute methods while blocked');
+    }
     let out;
     const trans = this.startTrans();
     let thrown = false;
@@ -228,7 +362,7 @@ class ValueStore extends ValueStream {
     } catch (err) {
       thrown = err;
     }
-    trans.endTrans();
+    this.endTrans(trans);
     if (thrown) {
       throw thrown;
     }
@@ -240,7 +374,9 @@ class ValueStore extends ValueStream {
    * @returns {Object|Proxy}
    */
   get do() {
-    if (!this._do) {
+    if (
+      !this._do
+    ) {
       if (hasProxy) {
         this._do = this._genDoProxy();
       } else {
@@ -257,11 +393,7 @@ class ValueStore extends ValueStream {
         const name = `set${uFirst(stream.name)}`;
         this._propSetters[name] = (value) => stream.next(value);
         const tName = `${name}_ot`;
-        this._propSetters[tName] = (value) => {
-          const out = this.throws(() => this._propSetters[name](value));
-          console.log(tName, 'returned', out);
-          return out;
-        };
+        this._propSetters[tName] = (value) => this.throws(() => this._propSetters[name](value));
       });
     }
     return this._propSetters;

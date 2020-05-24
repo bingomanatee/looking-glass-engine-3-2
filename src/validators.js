@@ -1,3 +1,5 @@
+import { isAbsent, hasValue, ABSENT } from './absent';
+
 const registry = new Map();
 
 const validators = (name, value, override = false) => {
@@ -19,5 +21,14 @@ validators('number', (v) => ((typeof v === 'number') ? false : 'value must be a 
 validators('nan', (v) => ((typeof v !== 'number') || (Number.isNaN(v)) ? false : 'value must be not a number'));
 validators('integer', (v) => ((Number.isSafeInteger(v)) ? false : 'value must be an integer'));
 validators('array', (v) => (Array.isArray(v) ? false : 'value must be an array'));
-validators('object', (v) => (v && (typeof v === 'object') ? false : 'value must be an object'));
+// eslint-disable-next-line max-len
+validators('object', (v) => (hasValue(v) && (typeof v === 'object') && (!Array.isArray(v)) ? false : 'value must be an object'));
+validators('function', (v) => ((typeof v === 'function') ? false : 'value must be a function'));
+
+validators.is = (test, value = ABSENT) => {
+  if (isAbsent(value)) {
+    return (v) => validators.is(test, v);
+  }
+  return !validators(test)(value);
+};
 export default validators;

@@ -56,7 +56,7 @@ tap.test(p.name, (suite) => {
         vsRCMissing.equals(getValue(), 4);
         // transactional locking prevents update messaging
 
-        t.endTrans();
+        s.endTrans(t);
 
         vsRCMissing.equals(getErrors().length, 0);
         vsRCMissing.equals(s.value, 5);
@@ -100,7 +100,8 @@ tap.test(p.name, (suite) => {
         s.next(5);
         vs1trans.equals(getValue(), 4);
         vs1trans.same(getUpdates(), [4]);
-        t.endTrans();
+
+        s.endTrans(t);
 
         vs1trans.equals(getValue(), 5);
         vs1trans.same(getUpdates(), [4, 5]);
@@ -123,11 +124,13 @@ tap.test(p.name, (suite) => {
 
         vs1trans.equals(getValue(), 4);
         vs1trans.same(getUpdates(), [4]);
-        t.endTrans();
+
+        s.endTrans(t);
 
         vs1trans.equals(getValue(), 4);
         vs1trans.same(getUpdates(), [4]);
-        t2.endTrans();
+
+        s.endTrans(t2);
 
         vs1trans.equals(getValue(), 5);
         vs1trans.same(getUpdates(), [4, 5]);

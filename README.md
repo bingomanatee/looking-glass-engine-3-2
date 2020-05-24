@@ -15,4 +15,6 @@ Also the ValueStream's functionality is now broken into three classes:
     It has transactional locking and validation.
 3. The `ValueStore` is a collection of ValueStream properties. It has actions.
 
-Complete documentation is in the doc folder run `yarn add -g gitdocs; gitdocs serve` for a documentation site.
+Complete documentation is in the doc folder 
+
+run `yarn add -g gitdocs; gitdocs serve` to host the documentation site locally

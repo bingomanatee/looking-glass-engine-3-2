@@ -2,9 +2,10 @@ import { BehaviorSubject, Subject } from 'rxjs';
 import { pairwise, distinct } from 'rxjs/operators';
 import { proppify } from '@wonderlandlabs/propper';
 import noop from 'lodash/identity';
-
+import lGet from 'lodash/get';
+import validators from './validators';
 import {
-  ABSENT, hasValue, isAbsent, notAbsent,
+  ABSENT, hasValue, isAbsent,
 } from './absent';
 import Message from './Message';
 import Value from './Value';
@@ -98,12 +99,58 @@ class ValueStream extends Value {
   }
 
   /**
+   * Blockers are things that freeze the update of a stream. use with care.
+   *
+   * @returns {Set}
+   * @private
+   */
+  get _$blockers() {
+    if (!this._blockers) {
+      this._blockers = new Set();
+    }
+    return this._blockers;
+  }
+
+  get hasBlockers() {
+    if (lGet(this, 'parent.hasBlockers')) {
+      return true;
+    }
+    if (!this._blockers) {
+      return false;
+    }
+    return this._$blockers.size > 0;
+  }
+
+  block(msg = ABSENT) {
+    if (!hasValue(msg)) {
+      msg = this.makeMessage('blocker', { blocker: true, target: this });
+    }
+
+    this._$blockers.add(msg);
+    return msg;
+  }
+
+  unblock(msg) {
+    if (msg && this.hasBlockers) {
+      this._$blockers.delete(msg);
+      if (this.parent && this.parent.unblock) {
+        this.parent.unblock(msg);
+      }
+    }
+  }
+
+  /**
    * satisfy a request message: either set the value OR say why we did not.
    * @param msg {Message}
    * @private
    */
 
   _onRequest(msg) {
+    if (this.hasBlockers) {
+      msg.error = new Error('cannot execute requests on a blocked ValueStream');
+      this.errors.next(msg);
+      throw msg;
+    }
     if (msg.complete || isAbsent(msg.value)) {
       return msg;
     }
@@ -120,12 +167,12 @@ class ValueStream extends Value {
       this.errors.next(msg);
     }
     if (!msg.error) {
-      // this alerts watchers to synchromous updating.
+      // this alerts watchers to sync updating.
       // transactional locks are ignored.
       this.$changes.next(msg);
     } else {
       if (msg.trans) {
-        msg.endTrans();
+        this.endTrans(msg);
       }
       return msg;
     }
@@ -139,7 +186,7 @@ class ValueStream extends Value {
     }
 
     if (msg.trans) {
-      msg.endTrans();
+      this.endTrans(msg);
     }
     return msg;
   }
@@ -170,6 +217,19 @@ class ValueStream extends Value {
 
   /** *************** TRANSACTIONALITY *************** */
 
+  /**
+   * if for some reason a transaction hangs you can flush it out of the pipe and free up the processes
+   *  @return {[Message]} whatever pending transactions were in the system
+   */
+  flushTranses() {
+    let out = [];
+    if (this._transes) {
+      out = Array.from(this._transes.values());
+      this._transes.clear();
+    }
+    return out;
+  }
+
   get hasTranses() {
     if (!this._transes) {
       return false;
@@ -191,7 +251,7 @@ class ValueStream extends Value {
 
   startTrans(msg) {
     if (!msg) {
-      msg = this.makeMessage(ABSENT, { trans: true });
+      msg = this.makeMessage(ABSENT, { trans: true, target: this });
     }
     this._$transes.add(msg);
     this._broadcastTrans();
@@ -199,6 +259,12 @@ class ValueStream extends Value {
   }
 
   endTrans(msg) {
+    if (!msg) {
+      return;
+    }
+    if (this.parent && this.parent.endTrans) {
+      this.parent.endTrans(msg);
+    }
     if (!this._$transes.has(msg)) {
       return;
     }
@@ -213,12 +279,13 @@ class ValueStream extends Value {
   get _$transStream() {
     if (!this.__transStream) {
       this.__transStream = new BehaviorSubject(this._$transes.size);
-      this.subSet.add(this.__transStream.pipe(pairwise()).subscribe(([a, b]) => {
-        if (this.pendingChanges && (a && (!b))) {
-          this.pendingChanges = false;
-          this._broadcastChange();
-        }
-      }));
+      this.subSet.add(this.__transStream.pipe(pairwise())
+        .subscribe(([a, b]) => {
+          if (this.pendingChanges && (a && (!b))) {
+            this.pendingChanges = false;
+            this._broadcastChange();
+          }
+        }));
     }
     return this.__transStream;
   }
@@ -268,6 +335,7 @@ class ValueStream extends Value {
 
 proppify(ValueStream)
   .addProp('pendingChanges', false, 'boolean')
+  .addProp('parent', null)
   .addProp('subSet', () => new Set()); // a collection of subscriptions to cancel when the valueStream is cancelled.
 
 export default ValueStream;

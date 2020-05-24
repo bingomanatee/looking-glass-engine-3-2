@@ -16,14 +16,8 @@ export default class Message {
     this.prev = props.prev;
     this.error = props.error;
     this.target = props.target;
-  }
-
-  endTrans() {
-    if (this.target) {
-      this.target.endTrans(this);
-    } else {
-      console.warn('message has no target: ,', this);
-    }
+    this.blocker = !!props.blocker;
+    this.virtual = !!props.virtual;
   }
 
   get message() {
@@ -46,6 +40,12 @@ export default class Message {
     const err = pick(this, 'target,name,value,complete,prev,trans,error'.split(','));
     err.message = this.message;
     if (typeof err.target === 'object' && err.target.name) err.target = err.target.name;
+    if (this.blocker) {
+      err.blocker = true;
+    }
+    if (this.virtual) {
+      err.virtual = true;
+    }
     return err;
   }
 }
@@ -53,8 +53,10 @@ export default class Message {
 proppify(Message)
   .addProp('target', null)
   .addProp('name', '')
+  .addProp('blocker', false, 'boolean')
   .addProp('value', null)
   .addProp('complete', false)
   .addProp('prev', ABSENT)
   .addProp('trans', false, 'boolean')
+  .addProp('virtual', false, 'boolean')
   .addProp('error', null);

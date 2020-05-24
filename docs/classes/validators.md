@@ -12,7 +12,7 @@ There are a few pre-loaded tests:
 * 'nan'
 * 'integer'
 * 'array'
-* 'object'
+* 'object' -- for the record, this test will fail null and arrays
 
 for really basic type checking. Feel free to add your own. 
 
