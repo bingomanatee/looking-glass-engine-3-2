@@ -61,4 +61,95 @@ const coord = new ValueStore(&#x27;coord2D&#x27;, { x: 0, y: 0 }, {}, {
 coord.do.setX(10);
 coord.do.setY(20);
 console.log(&#x27;magnitude:&#x27;, coord.my.magnitude)
-// &#x27;magnitude:&#x27; 22.360679774997897</code></pre></pre></div></div></div><nav class="css-pbmeb3"><div><h5>Table of Contents</h5><ul><li><a href="#constructor">constructor</a></li><li><a href="#subscribe">subscribe</a></li><li><a href="#methods">METHODS</a></li><li><a href="#addmethod">addMethod</a></li><li><a href="#domethodname">.do[methodName]</a></li><li><a href="#properties">PROPERTIES</a></li><li><a href="#setfilter">setFilter</a></li><li><a href="#value">.value</a></li><li><a href="#mypropertyname">my[propertyName]</a></li><li><a href="#property">property</a></li><li><a href="#virtuals">VIRTUALS</a></li></ul></div></nav></div></div></div></div></div></div></div><script>window._EMOTION_IDS_ = ["0","1acbpvw","u0jibj","dnr73q","15nfr7t","f1cmpm","14091cw","aw15ot","19cxnkh","1dk3zz9","s3ytl","1jycdwk","1jn8oq7","13owpa8","11qmojb","1kgj38i","b006m2","vajwk2","uo9dyt","co7x2c","3sxptb","md0ijk","ds7e4n","vd4esq","16tynih","lo9a9y","12rrj9i","xz6z05","ij4kvv","1eupom5","1gxonyo","6drkdn","1vgdy2o","18lkbor","1ilzqr7","vp1av0","1df0it9","1vti49z","yp7pwd","7s96u3","q4o76b","uuzmqi","vqbdhb","pbmeb3","157527c","op3zxg","7kp13n","15edcm3","w97qyh","bbzggn"]</script><script type="text/javascript" src="/main.ee5f8354274a92280220.js"></script></body></html>
+// &#x27;magnitude:&#x27; 22.360679774997897</code></pre></pre><a href="#watch" id="watch" class="css-vqbdhb"><h2 style="display:inline-block">watch</h2></a><p><code>(onChange, field:string, field:string...) : subscription</code></p><p>calls onChange every time one or more of the observed fields (properties or virtuals) changes. If no fields are expressed, returns null.</p><p>(note - the arguments are flattenDeep&#x27;d, so you can define fields as an array of strings)</p><p><code>onChange(values:object, store{ValueStore})</code> is passed an object with key/values from virtual or properties as specified by fields.</p><p>note, &quot;change&quot; is murky in javascript. By default watch serializes the field values object (the first parameter) using json-stringify-safe (a variant of JSON.stringify). This is potentially a time-suck; if you want to serialize the object array differently you can pass a second argument for serialization.</p><p>Observe this from the tap tests:</p><pre><pre style="display:block;overflow-x:auto;padding:.5em;color:#383a42;background:#fafafa"><code style="float:left;padding-right:10px"><span class="react-syntax-highlighter-line-number" style="opacity:.3">1
+</span><span class="react-syntax-highlighter-line-number" style="opacity:.3">2
+</span><span class="react-syntax-highlighter-line-number" style="opacity:.3">3
+</span><span class="react-syntax-highlighter-line-number" style="opacity:.3">4
+</span><span class="react-syntax-highlighter-line-number" style="opacity:.3">5
+</span><span class="react-syntax-highlighter-line-number" style="opacity:.3">6
+</span><span class="react-syntax-highlighter-line-number" style="opacity:.3">7
+</span><span class="react-syntax-highlighter-line-number" style="opacity:.3">8
+</span><span class="react-syntax-highlighter-line-number" style="opacity:.3">9
+</span><span class="react-syntax-highlighter-line-number" style="opacity:.3">10
+</span><span class="react-syntax-highlighter-line-number" style="opacity:.3">11
+</span><span class="react-syntax-highlighter-line-number" style="opacity:.3">12
+</span><span class="react-syntax-highlighter-line-number" style="opacity:.3">13
+</span><span class="react-syntax-highlighter-line-number" style="opacity:.3">14
+</span><span class="react-syntax-highlighter-line-number" style="opacity:.3">15
+</span><span class="react-syntax-highlighter-line-number" style="opacity:.3">16
+</span><span class="react-syntax-highlighter-line-number" style="opacity:.3">17
+</span><span class="react-syntax-highlighter-line-number" style="opacity:.3">18
+</span><span class="react-syntax-highlighter-line-number" style="opacity:.3">19
+</span><span class="react-syntax-highlighter-line-number" style="opacity:.3">20
+</span><span class="react-syntax-highlighter-line-number" style="opacity:.3">21
+</span><span class="react-syntax-highlighter-line-number" style="opacity:.3">22
+</span><span class="react-syntax-highlighter-line-number" style="opacity:.3">23
+</span><span class="react-syntax-highlighter-line-number" style="opacity:.3">24
+</span><span class="react-syntax-highlighter-line-number" style="opacity:.3">25
+</span><span class="react-syntax-highlighter-line-number" style="opacity:.3">26
+</span><span class="react-syntax-highlighter-line-number" style="opacity:.3">27
+</span><span class="react-syntax-highlighter-line-number" style="opacity:.3">28
+</span><span class="react-syntax-highlighter-line-number" style="opacity:.3">29
+</span><span class="react-syntax-highlighter-line-number" style="opacity:.3">30
+</span><span class="react-syntax-highlighter-line-number" style="opacity:.3">31
+</span><span class="react-syntax-highlighter-line-number" style="opacity:.3">32
+</span><span class="react-syntax-highlighter-line-number" style="opacity:.3">33
+</span><span class="react-syntax-highlighter-line-number" style="opacity:.3">34
+</span><span class="react-syntax-highlighter-line-number" style="opacity:.3">35
+</span><span class="react-syntax-highlighter-line-number" style="opacity:.3">36
+</span><span class="react-syntax-highlighter-line-number" style="opacity:.3">37
+</span><span class="react-syntax-highlighter-line-number" style="opacity:.3">38
+</span><span class="react-syntax-highlighter-line-number" style="opacity:.3">39
+</span><span class="react-syntax-highlighter-line-number" style="opacity:.3">40
+</span><span class="react-syntax-highlighter-line-number" style="opacity:.3">41
+</span><span class="react-syntax-highlighter-line-number" style="opacity:.3">42
+</span><span class="react-syntax-highlighter-line-number" style="opacity:.3">43
+</span><span class="react-syntax-highlighter-line-number" style="opacity:.3">44
+</span><span class="react-syntax-highlighter-line-number" style="opacity:.3">45
+</span><span class="react-syntax-highlighter-line-number" style="opacity:.3">46
+</span></code><code>
+      const info = [];
+      const person = new ValueStore(&#x27;person&#x27;, {
+        first: &#x27;&#x27;, last: &#x27;&#x27;,
+      });
+      person.addVirtual(&#x27;full&#x27;, (s) =&gt; `${s.my.first} ${s.my.last}`.trim());
+
+      person.watch((xy) =&gt; {
+        info.push(xy);
+      }, ({ full }) =&gt; full.toLowerCase(), [&#x27;first&#x27;, &#x27;last&#x27;, &#x27;full&#x27;]);
+
+      tWatch.same(info, [
+        { full: &#x27;&#x27;, first: &#x27;&#x27;, last: &#x27;&#x27; },
+      ]);
+
+      person.do.setFirst(&#x27;bruce&#x27;);
+      person.do.setLast(&#x27;Wayne&#x27;);
+
+      tWatch.same(info, [
+        { full: &#x27;&#x27;, first: &#x27;&#x27;, last: &#x27;&#x27; },
+        { full: &#x27;bruce&#x27;, first: &#x27;bruce&#x27;, last: &#x27;&#x27; },
+        { full: &#x27;bruce Wayne&#x27;, first: &#x27;bruce&#x27;, last: &#x27;Wayne&#x27; },
+      ]);
+
+      // this is the critical test - the serializer only looks at the lowercase full name
+      // so changing the case of bruce shouldn&#x27;t trigger an alert.
+
+      person.do.setFirst(&#x27;Bruce&#x27;);
+
+      tWatch.same(info, [
+        { full: &#x27;&#x27;, first: &#x27;&#x27;, last: &#x27;&#x27; },
+        { full: &#x27;bruce&#x27;, first: &#x27;bruce&#x27;, last: &#x27;&#x27; },
+        { full: &#x27;bruce Wayne&#x27;, first: &#x27;bruce&#x27;, last: &#x27;Wayne&#x27; },
+      ]);
+
+      person.do.setLast(&#x27;Jenner&#x27;);
+
+      // but the change is carried through when the case -insensitve full name does change
+      // as when we change the actual last name
+
+      tWatch.same(info, [
+        { full: &#x27;&#x27;, first: &#x27;&#x27;, last: &#x27;&#x27; },
+        { full: &#x27;bruce&#x27;, first: &#x27;bruce&#x27;, last: &#x27;&#x27; },
+        { full: &#x27;bruce Wayne&#x27;, first: &#x27;bruce&#x27;, last: &#x27;Wayne&#x27; },
+        { full: &#x27;Bruce Jenner&#x27;, first: &#x27;Bruce&#x27;, last: &#x27;Jenner&#x27; },
+      ]);</code></pre></pre></div></div></div><nav class="css-pbmeb3"><div><h5>Table of Contents</h5><ul><li><a href="#constructor">constructor</a></li><li><a href="#subscribe">subscribe</a></li><li><a href="#methods">METHODS</a></li><li><a href="#addmethod">addMethod</a></li><li><a href="#domethodname">.do[methodName]</a></li><li><a href="#properties">PROPERTIES</a></li><li><a href="#setfilter">setFilter</a></li><li><a href="#value">.value</a></li><li><a href="#mypropertyname">my[propertyName]</a></li><li><a href="#property">property</a></li><li><a href="#virtuals">VIRTUALS</a></li><li><a href="#watch">watch</a></li></ul></div></nav></div></div></div></div></div></div></div><script>window._EMOTION_IDS_ = ["0","1acbpvw","u0jibj","dnr73q","15nfr7t","f1cmpm","14091cw","aw15ot","19cxnkh","1dk3zz9","s3ytl","1jycdwk","1jn8oq7","13owpa8","11qmojb","1kgj38i","b006m2","vajwk2","uo9dyt","co7x2c","3sxptb","md0ijk","ds7e4n","vd4esq","16tynih","lo9a9y","12rrj9i","xz6z05","ij4kvv","1eupom5","1gxonyo","6drkdn","1vgdy2o","18lkbor","1ilzqr7","vp1av0","1df0it9","1vti49z","yp7pwd","7s96u3","q4o76b","uuzmqi","vqbdhb","pbmeb3","157527c","op3zxg","7kp13n","15edcm3","w97qyh","bbzggn"]</script><script type="text/javascript" src="/main.a5b6b0cc6fa2364a0dfb.js"></script></body></html>

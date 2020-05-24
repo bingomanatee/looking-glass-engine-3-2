@@ -60,7 +60,7 @@ class Value {
   /**
    * a private setter for value
    * @param item
-   * @private
+   * @protected
    */
   _setValue(item) {
     let errors = this.validate(item, true);

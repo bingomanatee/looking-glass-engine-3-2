@@ -43,6 +43,9 @@ values to the user-attempted values and display errors on validation failure.
 this will create dissonance between the form displayed values and the stored values
 but as this only exists prior to submission it might be a good convention to try out. 
 
+subscribe listens to the `.$updateStream`; if you want to do rxjs operations on updates,
+pipe this stream. 
+
 ## complete
 `()`
 

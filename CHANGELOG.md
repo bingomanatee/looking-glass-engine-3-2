@@ -1,10 +1,14 @@
-## 1.0.0
+## 3.2.0
 
-"And I heard, as it were, the noise of thunder
-One of the four beasts saying,
-'Come and see.' and I saw, and behold a white horse"
-There's a man goin' 'round takin' names
-And he decides who next free and who next blame
-Everybody won't be treated all the same
-There'll be a golden ladder reachin' down
-When the man comes around
+Recoded entire code base; 
+spread functionality through a layer of classes for "easier" digestion/testing.
+major features add include virtuals, expanded watch, and more nuanced methods.
+
+* removed 'is' passthroughs
+* watch now takes one or more fields to watch
+* added virtuals - lazy computed values that derive from data. 
+* expanded use of Proxies. 
+* added gitdocs documentation tree
+* added more options when creating methods, allowing them to throw and/or be transactional.
+* added throwing versions of the set methods. 
+

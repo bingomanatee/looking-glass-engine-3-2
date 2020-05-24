@@ -1,6 +1,10 @@
 import { proppify } from '@wonderlandlabs/propper';
+import { map, distinctUntilChanged } from 'rxjs/operators';
 import lGet from 'lodash/get';
+import flattenDeep from 'lodash/flattenDeep';
 import uFirst from 'lodash/upperFirst';
+import stringify from 'json-stringify-safe';
+import { BehaviorSubject } from 'rxjs';
 import ValueStream from './ValueStream';
 import validators from './validators';
 import { ABSENT } from './absent';
@@ -34,13 +38,102 @@ class ValueStore extends ValueStream {
   }
 
   addVirtual(name, fn, redefine = false) {
-    if (!validators.is('function', fn)) {
-      throw new Error('non-function supplied as virtual value');
+    try {
+      if (!validators.is('function', fn)) {
+        throw new Error('non-function supplied as virtual value');
+      }
+      if ((!redefine) && this._$virtuals.has(name)) {
+        throw new Error(`cannot redefine ${name}`);
+      }
+      this._$virtuals.set(name, (...args) => this.derive(fn, name, ...args));
+    } catch (err) {
+      console.error('error defining virtual:', name, fn, redefine, err);
     }
-    if ((!redefine) && this._$virtuals.has(name)) {
-      throw new Error(`cannot redefine ${name}`);
+  }
+
+  _findSV(fields) {
+    const streams = [];
+    const virtuals = [];
+    flattenDeep(fields).forEach((name) => {
+      if (!name) {
+        return;
+      }
+      if (this.streams.has(name)) {
+        streams.push(name);
+      } else if (this._$virtuals.has(name)) {
+        virtuals.push(name);
+      }
+    });
+    return { streams, virtuals };
+  }
+
+  _expressor(streams, virtuals) {
+    return () => {
+      try {
+        const data = virtuals.length ? this.deriveAll(virtuals) : new Map();
+        streams.forEach((s) => data.set(s, this.my[s]));
+        const out = {};
+        data.forEach((value, key) => {
+          out[key] = value;
+        });
+        return out;
+      } catch (err) {
+        console.error('error expressing watched data:', err);
+        return {};
+      }
+    };
+  }
+
+  /**
+   * informs the observer if a set of fields/virtuals change.
+   *
+   * @param onChange {function} | {[function, function, function]} gets (values: Object, self) when values change
+   * @param serializer {function}  | {string} (first field reduces fields to a scalar type for comparison
+   * @param fields {[String]} the properties/virtuals you want to observe
+   * @returns {Subscription}
+   */
+  watch(onChange, serializer, ...fields) {
+    try {
+      if (!validators.is('function', onChange)) {
+        throw new Error('first argument to watch must be a function');
+      }
+      if (!validators.is('function', serializer)) {
+        fields.unshift(serializer);
+        serializer = stringify;
+      }
+
+      const { streams, virtuals } = this._findSV(fields);
+
+      // create a function that expressed the desired subset of data
+      const expressData = this._expressor(streams, virtuals);
+
+      // create a stream with the initial values,
+      // that updates with every change
+      const stream = new BehaviorSubject(expressData());
+
+      // update with expressedData every time the data changes.
+      // note -- IGNORES transactional locking.
+
+      const changeSub = this.$changes.pipe(
+        map(expressData),
+      ).subscribe((data) => stream.next(data));
+
+      this.subSet.add(changeSub);
+
+      // watch distinct expressions of data
+      const sub = stream.pipe(
+        distinctUntilChanged((a, b) => a === b, (v) => serializer(v)),
+      ).subscribe((data) => {
+        onChange(data, this);
+      });
+
+      this.subSet.add(sub);
+
+      return sub;
+    } catch (err) {
+      console.error('error in watch: ', err);
+      return null;
     }
-    this._$virtuals.set(name, (...args) => this.derive(fn, name, ...args));
   }
 
   _initMethods(methods) {
@@ -220,10 +313,8 @@ class ValueStore extends ValueStream {
     return this.addStream(...params);
   }
 
-  subscribe(onValue, ...args) {
-    return super.subscribe(() => {
-      onValue(this);
-    }, ...args);
+  get $updateStream() {
+    return super.$updateStream.pipe(map(() => this));
   }
 
   addStream(name, startValue = ABSENT, filter = ABSENT) {

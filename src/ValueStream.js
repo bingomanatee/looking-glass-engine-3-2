@@ -160,6 +160,8 @@ class ValueStream extends Value {
       msg.startTrans();
     }
 
+    // actually updates the value to the requested state
+    // throws if not a valid value
     try {
       this._setValue(msg.value);
     } catch ({ message, error }) {
@@ -200,7 +202,7 @@ class ValueStream extends Value {
    * @private
    */
   _broadcastChange(msg) {
-    this._$updater.next(msg);
+    this.$updateStream.next(msg);
   }
 
   /**
@@ -292,7 +294,7 @@ class ValueStream extends Value {
 
   /** ******************* SUBSCRIPTION ************* */
 
-  get _$updater() {
+  get $updateStream() {
     if (!this.__updater) {
       this.__updater = new BehaviorSubject(this);
     }
@@ -303,7 +305,7 @@ class ValueStream extends Value {
     if (onError) {
       this.subSet.add(this.errors.subscribe(onError, onError));
     }
-    const sub = this._$updater.subscribe(
+    const sub = this.$updateStream.subscribe(
       () => {
         onUpdate(this);
       },

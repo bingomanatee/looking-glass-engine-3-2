@@ -178,3 +178,71 @@ console.log('magnitude:', coord.my.magnitude)
 // 'magnitude:' 22.360679774997897
 
 ```
+
+## watch 
+`(onChange, field:string, field:string...) : subscription`
+
+calls onChange every time one or more of the observed fields (properties or virtuals) changes.
+If no fields are expressed, returns null.
+ 
+(note - the arguments are flattenDeep'd, so you can define fields as an array of strings)
+
+`onChange(values:object, store{ValueStore})` is passed an object with key/values from virtual or properties
+as specified by fields. 
+
+note, "change" is murky in javascript. By default watch serializes the field values object (the first parameter)
+using json-stringify-safe (a variant of JSON.stringify). This is potentially a time-suck; if you want to serialize
+the object array differently you can pass a second argument for serialization.
+
+Observe this from the tap tests:
+
+```javascript
+
+      const info = [];
+      const person = new ValueStore('person', {
+        first: '', last: '',
+      });
+      person.addVirtual('full', (s) => `${s.my.first} ${s.my.last}`.trim());
+
+      person.watch((xy) => {
+        info.push(xy);
+      }, ({ full }) => full.toLowerCase(), ['first', 'last', 'full']);
+
+      tWatch.same(info, [
+        { full: '', first: '', last: '' },
+      ]);
+
+      person.do.setFirst('bruce');
+      person.do.setLast('Wayne');
+
+      tWatch.same(info, [
+        { full: '', first: '', last: '' },
+        { full: 'bruce', first: 'bruce', last: '' },
+        { full: 'bruce Wayne', first: 'bruce', last: 'Wayne' },
+      ]);
+
+      // this is the critical test - the serializer only looks at the lowercase full name
+      // so changing the case of bruce shouldn't trigger an alert.
+
+      person.do.setFirst('Bruce');
+
+      tWatch.same(info, [
+        { full: '', first: '', last: '' },
+        { full: 'bruce', first: 'bruce', last: '' },
+        { full: 'bruce Wayne', first: 'bruce', last: 'Wayne' },
+      ]);
+
+      person.do.setLast('Jenner');
+
+      // but the change is carried through when the case -insensitve full name does change
+      // as when we change the actual last name
+
+      tWatch.same(info, [
+        { full: '', first: '', last: '' },
+        { full: 'bruce', first: 'bruce', last: '' },
+        { full: 'bruce Wayne', first: 'bruce', last: 'Wayne' },
+        { full: 'Bruce Jenner', first: 'Bruce', last: 'Jenner' },
+      ]);
+
+```
+
