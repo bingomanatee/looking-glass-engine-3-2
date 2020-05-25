@@ -1,4 +1,4 @@
-### ValueStore
+# ValueStore
  `<= ValueStream`
 
 ValueStreams are useful in their own right but ValueStores are the overarching
@@ -151,16 +151,13 @@ console.log('x was', x, 'and is now', threeDcoord.my.x);
 ## property 
 `(name, value, fliter?)` (alias `.setStream`)
 
-defines a property of the ValueStore. 
-Properties cannot be redefined (throws error once a name is taken).
+defines a property of the ValueStore. Properties cannot be redefined (throws error once a name is taken).
 
 This method creates a ValueStream and attaches it to the streams collection. 
 
 ## VIRTUALS
 
-Virtuals are computed values that are derived from the store. They are only computed when retrieved. 
-The function that defines a virtual *cannot* change the store. a virtual can call another virtual; but 
-any circular reference (a calls b which calls a) will throw an error. 
+Virtuals are computed values that are derived from the store. They are only computed when retrieved.  The function that defines a virtual *cannot* change the store. a virtual can call another virtual; but  any circular reference (a calls b which calls a) will throw an error. 
 
 Virtuals, like property values, can be accessed off the `.my` proxy. 
 
@@ -182,17 +179,14 @@ console.log('magnitude:', coord.my.magnitude)
 ## watch 
 `(onChange, field:string, field:string...) : subscription`
 
-calls onChange every time one or more of the observed fields (properties or virtuals) changes.
-If no fields are expressed, returns null.
+calls onChange every time one or more of the observed fields (properties or virtuals) changes. If no fields are expressed, returns null.
  
 (note - the arguments are flattenDeep'd, so you can define fields as an array of strings)
 
 `onChange(values:object, store{ValueStore})` is passed an object with key/values from virtual or properties
 as specified by fields. 
 
-note, "change" is murky in javascript. By default watch serializes the field values object (the first parameter)
-using json-stringify-safe (a variant of JSON.stringify). This is potentially a time-suck; if you want to serialize
-the object array differently you can pass a second argument for serialization.
+note, "change" is murky in javascript. By default watch serializes the field values object (the first parameter) using json-stringify-safe (a variant of JSON.stringify). This is potentially a time-suck; if you want to serialize the object array differently you can pass a second argument for serialization.
 
 Observe this from the tap tests:
 

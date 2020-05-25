@@ -1,5 +1,5 @@
 {
-  "name": "@wonderlandlabs/looking-glass-engine3_2",
+  "name": "@wonderlandlabs/looking-glass-engine32",
   "version": "3.2.0",
   "description": "A rollup setup for modules",
   "main": "lib/index.js",
