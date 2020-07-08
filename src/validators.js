@@ -23,7 +23,7 @@ validators('integer', (v) => ((Number.isSafeInteger(v)) ? false : 'value must be
 validators('array', (v) => (Array.isArray(v) ? false : 'value must be an array'));
 // eslint-disable-next-line max-len
 validators('object', (v) => (hasValue(v) && (typeof v === 'object') && (!Array.isArray(v)) ? false : 'value must be an object'));
-validators('function', (v) => ((typeof v === 'function') ? false : 'value must be a function'));
+validators('function', (v) => (v && (typeof v === 'function') ? false : 'value must be a function'));
 
 validators.is = (test, value = ABSENT) => {
   if (isAbsent(value)) {

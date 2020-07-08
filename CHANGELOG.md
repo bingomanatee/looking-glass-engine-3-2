@@ -12,3 +12,10 @@ major features add include virtuals, expanded watch, and more nuanced methods.
 * added more options when creating methods, allowing them to throw and/or be transactional.
 * added throwing versions of the set methods. 
 
+## 3.2.1
+
+fixed a quirk in watch where serializer was undefined. 
+
+# 3.2.2
+
+ensured symmetry in property/method definition; addProperty === property, addMethod === method

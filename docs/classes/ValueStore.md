@@ -86,7 +86,7 @@ the way you want it to execute.
 
 Again, all configuration options are optional. 
 
-## addMethod
+## method (== addMethod)
 `(name: string, fn: function, options?: {bind:bool, trans:bool, throws: bool})` (alias `method`)
 
 Adds a method to the store. is *not* idempotent; 
@@ -148,7 +148,7 @@ console.log('x was', x, 'and is now', threeDcoord.my.x);
 // 'x was', 0, 'and is now', 10
 ```
 
-## property 
+## property (== addProperty == setStream)
 `(name, value, fliter?)` (alias `.setStream`)
 
 defines a property of the ValueStore. Properties cannot be redefined (throws error once a name is taken).

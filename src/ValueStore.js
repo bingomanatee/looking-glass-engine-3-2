@@ -37,6 +37,12 @@ class ValueStore extends ValueStream {
     });
   }
 
+  /**
+   * @param name {String}
+   * @param fn [function}
+   * @param redefine {Boolean}
+   * @returns {ValueStore}
+   */
   addVirtual(name, fn, redefine = false) {
     try {
       if (!validators.is('function', fn)) {
@@ -49,6 +55,7 @@ class ValueStore extends ValueStream {
     } catch (err) {
       console.error('error defining virtual:', name, fn, redefine, err);
     }
+    return this;
   }
 
   _findSV(fields) {
@@ -93,6 +100,9 @@ class ValueStore extends ValueStream {
    * @returns {Subscription}
    */
   watch(onChange, serializer, ...fields) {
+    if (!serializer) {
+      throw new Error('watch requires fields to be defined');
+    }
     try {
       if (!validators.is('function', onChange)) {
         throw new Error('first argument to watch must be a function');
@@ -307,6 +317,10 @@ class ValueStore extends ValueStream {
     delete this._valueProxy;
     delete this._do;
     delete this._propSetters;
+  }
+
+  addProperty(...params) {
+    return this.addStream(...params);
   }
 
   property(...params) {
