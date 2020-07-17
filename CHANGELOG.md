@@ -23,3 +23,8 @@ ensured symmetry in property/method definition; addProperty === property, addMet
 # 3.2.4
 
 Allowed objects as validators for the purpose of developing formal
+
+# 3.2.5
+
+updated lodash reflecting github security prompt;
+reflected 'is' package is no longer a dependency outside the tests
