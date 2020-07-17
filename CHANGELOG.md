@@ -19,3 +19,7 @@ fixed a quirk in watch where serializer was undefined.
 # 3.2.2
 
 ensured symmetry in property/method definition; addProperty === property, addMethod === method
+
+# 3.2.4
+
+Allowed objects as validators for the purpose of developing formal

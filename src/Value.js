@@ -117,55 +117,36 @@ class Value {
   }
 
   _validateList(tests, value) {
-    /*   if (is.string(tests[0]) && /^or|\||\|\|$/.test(tests[0])) {
-      return this._validateOrList(tests.slice(1), value);
-    }
-
-    if (is.string(tests[0]) && /^not|!$/.test(tests[0])) {
-      return this._validateNotList(tests.slice(1), value);
-    } */
-
     return tests.reduce((out, filter) => {
       const err = this._validateFilter(filter, value, out);
       if (err) return [...out, err];
       return out;
     }, []);
   }
-  /*
-  _validateOrList(filterList, value) {
-    const errors = filterList.map((filter) => this._validateFilter(filter, value));
-    if (every(errors)) {
-      return errors;
-    }
-    return [];
-  }
 
-  _validateNotList(filterList, value) {
-    const errors = this._validateList(filterList, value);
-    if (errors.length) {
-      return [];
+  _validateInverse(filter, value, errors) {
+    const m = NOT_RE.exec(filter);
+    const subFilter = m[1];
+    const failure = this._validateFilter(subFilter, value, errors);
+    if (failure) {
+      return false;
     }
-    return ['failed not condition'];
-  } */
+    return `${this.name} cannot be a ${subFilter}`;
+  }
 
   _validateFilter(filter, value, errors) {
     if (typeof (filter) === 'function') {
       return filter(value, errors, this);
-    } if (typeof (filter) === 'string') {
+    }
+    if (typeof (filter) === 'string') {
       if (NOT_RE.test(filter)) {
-        const m = NOT_RE.exec(filter);
-        const subFilter = m[1];
-        const failure = this._validateFilter(subFilter, value, errors);
-        if (failure) {
-          return false;
-        }
-        return `${this.name} cannot be a ${subFilter}`;
+        return this._validateInverse(filter, value, errors);
       }
 
       const test = validators(filter);
 
       if (!test) {
-        return `cannot parse type ${filter}`;
+        return `there is no validator named ${filter}`;
       }
 
       const result = test(value);
@@ -173,6 +154,9 @@ class Value {
       if (result) {
         return `${this.name} must be a ${filter}`;
       }
+    }
+    if (typeof (filter) === 'object') {
+      return filter.validate(value, errors, this);
     }
 
     return false;
