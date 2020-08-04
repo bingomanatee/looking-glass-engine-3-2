@@ -49,13 +49,13 @@ function isOddNumber(n, errors) {
 const ss2 = new Value('oddNum', 1, ['number', isOddNumber]);
 ```
 
-Array filters let you ensure type sanity before applying business logic, or to 
+Array metas let you ensure type sanity before applying business logic, or to 
 develop and mix a suite of validation computations. The logical union of an array
 of tests is AND as in, every test in the array must pass or the validation is 
 considered a failure. Unlike javascript && logic, every test in the array is always
 processed regardless of the outcomes of the previous tests. 
 
-## validate
+## annotate
 `(value = ABSENT singleError? = false)`
 
 tests a value against the filter. returns an array of errors - empty if valid. 

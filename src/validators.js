@@ -1,3 +1,10 @@
+import validators from '@wonderlandlabs/validators';
+
+const val = validators();
+
+export default val;
+
+/*
 import { isAbsent, hasValue, ABSENT } from './absent';
 
 const registry = new Map();
@@ -32,3 +39,4 @@ validators.is = (test, value = ABSENT) => {
   return !validators(test)(value);
 };
 export default validators;
+*/

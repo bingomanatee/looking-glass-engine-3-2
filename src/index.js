@@ -1,13 +1,10 @@
-import ValueStream from './ValueStream';
-import Value from './Value';
-import ValueStore from './ValueStore';
-import {ABSENT} from './absent';
+import { ABSENT } from './absent';
 import validators from './validators';
+import FilteredSubject from './FilteredSubject';
+import MetaList from './MetaList';
+import Meta from './Meta';
+import ValueStore from './ValueStore';
 
 export default {
-  ValueStream,
-  Value,
-  ValueStore,
-  ABSENT,
-  validators,
+  validators, FilteredSubject, ValueStore, ABSENT, MetaList, Meta,
 };
