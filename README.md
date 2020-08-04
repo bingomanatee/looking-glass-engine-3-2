@@ -3,7 +3,7 @@ with a simpler interface for change tracking. Looking Glass 3 has a lot of movin
 and it is harder than necessary next infer functionality from source.
 
 LGE 3.2 uses a concept of Messages as a class structure that metas through the streams,
-whether the update stream or the error stream. Even transactions are Messages. 
+whether the update subject or the error subject. Even transactions are Messages. 
 This allows for a more consistent set of annotation when information comes back 
 or is polled in the debugging context. 
 

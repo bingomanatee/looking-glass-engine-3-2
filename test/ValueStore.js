@@ -38,6 +38,20 @@ tap.test(p.name, (suite) => {
       p.end();
     });
 
+    vs.test('my', (p) => {
+      const store = new ValueStore({ x: 0, y: 0 });
+
+      p.same(store.my.x, 0);
+      p.same(store.my.y, 0);
+
+      store.do.setX(2);
+
+      p.same(store.my.x, 2);
+      p.same(store.my.y, 0);
+
+      p.end();
+    });
+
     vs.end();
   });
 

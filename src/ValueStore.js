@@ -7,6 +7,7 @@ import val from './validators';
 
 import testPropertyName from './testPropertyName';
 import FilteredSubject from './FilteredSubject';
+import { ABSENT, isAbsent } from './absent';
 
 const isArray = val.is('array');
 const isString = val.is('string');
@@ -66,7 +67,6 @@ export default class ValueStore {
   }
 
   _initDo() {
-    this._actions = {};
     this._initDoSetters();
   }
 
@@ -76,10 +76,6 @@ export default class ValueStore {
       const method = `set${upperFirst(identifier(name))}`;
       this._doSetters[method] = (value) => stream.next(value);
     });
-
-    if (typeof Proxy !== 'undefined') {
-      this._doProxy = new Proxy(this, this._doHandler);
-    }
   }
 
   get _doHandler() {
@@ -96,9 +92,56 @@ export default class ValueStore {
     };
   }
 
+  get _doProxy() {
+    if (!this.__doProxy) {
+      if (typeof Proxy !== 'undefined') {
+        this.__doProxy = new Proxy(this, this._doHandler);
+      } else {
+        this.__doProxy = ABSENT;
+      }
+    }
+    return isAbsent(this.__doProxy) ? false : this.__doProxy;
+  }
+
+  get _myHandler() {
+    return {
+      get(store, property) {
+        if (store.streams.has(property)) {
+          return store.streams.get(property).value;
+        }
+        throw Object.assign(new Error(`attempt to call undefined property ${property}`), { store });
+      },
+    };
+  }
+
+  get _myProxy() {
+    if (!this.__myProxy) {
+      if (typeof Proxy !== 'undefined') {
+        this.__myProxy = new Proxy(this, this._myHandler);
+      } else {
+        this.__myProxy = ABSENT;
+      }
+    }
+    return isAbsent(this.__myProxy) ? false : this.__myProxy;
+  }
+
   get do() {
     if (this._doProxy) return this._doProxy;
     return { ...this._actions, ...this._doSetters };
+  }
+
+  get my() {
+    if (this._myProxy) return this._myProxy;
+    return this.value;
+  }
+
+  get value() {
+    const out = {};
+    this.streams.forEach((stream, name) => {
+      out[name] = stream.value;
+    });
+
+    return out;
   }
 
   get subject() {
@@ -144,13 +187,7 @@ export default class ValueStore {
       throw new Error(`cannot redefine ${name}`);
     }
 
-    const hasFilter = filters.length || (isArray(filters[0]) && filters[0].length);
-    const stream = hasFilter ? new FilteredSubject(value, filters) : new BehaviorSubject(value)
-      .pipe(map((value) => ({
-        value,
-        lastValid: value,
-        meta: [],
-      })));
+    const stream = new FilteredSubject(value, filters);
 
     this.streams.set(name, stream);
     if (this._initialized) {
@@ -165,7 +202,7 @@ export default class ValueStore {
     }
 
     const keys = Array.from(this.streams.keys());
-    const values = Array.from(this.streams.values());
+    const values = Array.from(this.streams.values()).map((v) => v.subject);
 
     this._relay = combineLatest(...values)
       .pipe(map((streamValues) => {
@@ -177,8 +214,8 @@ export default class ValueStore {
         // console.log('_updateStream: streamValues:', streamValues, 'valueObj:', valueObj);
         return valueObj;
       }))
-      .subscribe((values) => {
-        this._subject.next(values);
+      .subscribe((currentValues) => {
+        this._subject.next(currentValues);
       }, (err) => this._subject.error(err), () => this._subject.complete());
     this._initDoSetters();
   }
@@ -186,4 +223,5 @@ export default class ValueStore {
 
 proppify(ValueStore)
   .addProp('subSets', () => new Set())
+  .addProp('_actions', () => ({}))
   .addProp('streams', () => new Map());

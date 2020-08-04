@@ -33,7 +33,7 @@ note, the change is still immediate/synchronous.
 
 This is the Observable method; it follows `rx.js` conventions EXCEPT that onError
 gets more messages than is typical. the rx.js standard is that onError is, like a 
-failed promise, the death rattle of a stream; and gets zero or one messages. 
+failed promise, the death rattle of a subject; and gets zero or one messages. 
 
 In LGE ValueStreams emit to onError many times, 
 including when you try to set a value to an invalid value. 
@@ -44,7 +44,7 @@ this will create dissonance between the form displayed values and the stored val
 but as this only exists prior to submission it might be a good convention to try out. 
 
 subscribe listens to the `.$updateStream`; if you want to do rxjs operations on updates,
-pipe this stream. 
+pipe this subject. 
 
 ## complete
 `()`
@@ -53,7 +53,7 @@ this is part of the Observable interfaces. It completes all subscriptions. `.nex
 at this point doesn't have any effects after completion. 
 
 ## .$requests
-`stream`
+`subject`
 
-ordinarily an internal stream that channels all the Messages prior to any
+ordinarily an internal subject that channels all the Messages prior to any
 error testing/changes. Useful for debugging. 

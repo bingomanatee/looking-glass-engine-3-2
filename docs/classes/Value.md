@@ -10,7 +10,7 @@ properties of the other classes into a basic subclass.
 Setting the value to an invalid item will throw; and if this is true of the initial value,
 *creating* a Value with an invalid initial value (based on its validator) will throw. 
 
-Value is *not* a stream: it is simply the core validation/value/name functionality underpinning
+Value is *not* a subject: it is simply the core validation/value/name functionality underpinning
 the other classes. 
 
 ## constructor

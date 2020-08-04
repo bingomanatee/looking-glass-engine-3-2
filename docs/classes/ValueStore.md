@@ -36,7 +36,7 @@ Also all property errors are repeated to onError in the form:
 ```
 { 
     store: string, // name of this store
-    source: string, // name of the stream that had an error
+    source: string, // name of the subject that had an error
     error: Object, // JSON snapshot of the error message
 }
 ```
@@ -61,7 +61,7 @@ that being said, if the `bind` modifier is true the method will be bound to the 
 Methods are synchronous *by default*. You can return a promise but the method is considered 
 complete (and the transactionality closed) at the end of the synchronous execution of the method. 
 
-By default method errors are trapped and redirected to the errors stream. That can be *bad* if
+By default method errors are trapped and redirected to the errors subject. That can be *bad* if
 you call several methods in a row and expect that they have done their business.
 
 For that reason methods are given a set of behavior modifiers:

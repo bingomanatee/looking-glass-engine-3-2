@@ -29,7 +29,7 @@ there are four classes of methods:
 * **throws + trans** -- transactional, throws
 
 Whatever the variant, the design of the store is to trap the thrown error and to squelch 
-the transaction before passing on the error to the errors stream -- and possibly throw it. 
+the transaction before passing on the error to the errors subject -- and possibly throw it. 
 
 BUT CODE IS HARD.
 
