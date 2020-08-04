@@ -8,7 +8,7 @@ module.exports = {
   plugins: [
     resolve(),
     commonjs(),
-  //  terser(),
+    terser(),
     bundleSize()
   ],
   output: {

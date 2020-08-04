@@ -1,25 +1,19 @@
 import { Subject, combineLatest, BehaviorSubject } from 'rxjs';
 import { distinctUntilChanged, map } from 'rxjs/operators';
 import { identifier } from 'safe-identifier';
-import upperFirst from 'lodash/upperFirst';
-import uniq from 'lodash/uniq';
 import { proppify } from '@wonderlandlabs/propper';
-import flatten from 'lodash/flattenDeep';
-import val from './validators';
+import flatten from './flatten';
+import val, { isArray, isFunction, isString } from './validators';
 
 import testPropertyName from './testPropertyName';
-import FilteredSubject from './FilteredSubject';
+import SubjectMeta from './SubjectMeta';
 import Virtual from './Virtual';
-import { ABSENT, isAbsent } from './absent';
+import {
+  NOOP_SUBJECT, NOOP, ABSENT, isAbsent,
+} from './absent';
 
-const isArray = val.is('array');
-const isString = val.is('string');
-const isNumber = val.is('number');
-const isObject = val.is('object');
-const isFunction = val.is('function');
-
-const NOOP = () => {};
-const NOOP_SUBJECT = new BehaviorSubject(null);
+const uniq = (list) => (isArray(list) ? list.reduce((o, item) => (o.includes(item) ? o : [...o, item]), []) : []);
+const upperFirst = (s) => (isString(s) ? (s.substr(0, 1).toUpperCase() + s.substr(1)) : '');
 
 // @TODO: namespace conflict between virtuals and properties.
 
@@ -46,6 +40,50 @@ export default class ValueStore {
         distinctUntilChanged(),
         map((values) => properties.reduce((out, property, i) => {
           out[property] = values[i];
+          return out;
+        }, {})),
+      );
+
+    this.subject.subscribe(NOOP, NOOP, () => selectStream.complete());
+    return selectStream;
+  }
+
+  get propertyNames() {
+    return Array.from(this.streams.keys());
+  }
+
+  preProcess(name, fn) {
+    if (!name) {
+      this.propertyNames.forEach((n) => this.preProcess(n));
+      return this;
+    }
+    if (isFunction(name)) {
+      fn = name;
+      name = this.propertyNames.pop();
+    }
+    if (!this.streams.has(name)) {
+      throw new Error(`preProcess cannot find property ${name}`);
+    }
+    this.streams.get(name).preProcess(fn);
+    return this;
+  }
+
+  selectValues(...fields) {
+    const properties = uniq(flatten(fields));
+    const virtuals = [];
+
+    const streams = properties.map((property) => {
+      if (this.streams.has(property)) return this.streams.get(property).subject;
+      if (this._virtuals.has(property)) {
+        virtuals.push(property);
+      }
+      return NOOP_SUBJECT;
+    });
+    const selectStream = combineLatest(streams)
+      .pipe(
+        distinctUntilChanged(),
+        map((values) => properties.reduce((out, property, i) => {
+          out[property] = virtuals.includes(property) ? this._virtuals.get(property).value : values[i].value;
           return out;
         }, {})),
       );
@@ -245,7 +283,8 @@ export default class ValueStore {
       throw new Error(`cannot redefine ${name}`);
     }
 
-    const stream = new FilteredSubject(value, filters);
+    const stream = new SubjectMeta(value, filters);
+    stream.store = this;
 
     this.streams.set(name, stream);
   }

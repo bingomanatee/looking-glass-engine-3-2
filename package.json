@@ -19,7 +19,6 @@
   "dependencies": {
     "@wonderlandlabs/propper": "3.0.2",
     "json-stringify-safe": "^5.0.1",
-    "lodash": "^4.17.15",
     "rxjs": "^6.5.5",
     "safe-identifier": "^0.4.1"
   },

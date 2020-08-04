@@ -1,14 +1,7 @@
 import { proppify } from '@wonderlandlabs/propper';
-import lGet from 'lodash/get';
-import flatten from 'lodash/flattenDeep';
-import val from './validators';
-import { ABSENT, isAbsent } from './absent';
+import flatten from './flatten';
+import val, { isObject } from './validators';
 import Meta from './Meta';
-
-const isArray = val.is('array');
-const isString = val.is('string');
-const isNumber = val.is('number');
-const isObject = val.is('object');
 
 const EMPTY_MAP = new Map();
 
@@ -28,6 +21,13 @@ export default class MetaList {
 
   add(meta) {
     this.metas.push(Meta.create(meta));
+  }
+
+  get type() {
+    if (this.metas.length) {
+      return this.metas[0].name || '';
+    }
+    return '';
   }
 
   _initMeta(metas) {
@@ -58,7 +58,7 @@ export default class MetaList {
   }
 
   _keyFor(meta) {
-    return lGet(meta, 'order', null);
+    return meta ? meta.order : null;
   }
 
   orderMetas() {

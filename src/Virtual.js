@@ -1,4 +1,4 @@
-import flatten from 'lodash/flattenDeep';
+import flatten from './flatten';
 import { distinctUntilChanged } from 'rxjs/operators';
 import { BehaviorSubject } from 'rxjs';
 

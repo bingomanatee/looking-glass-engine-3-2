@@ -1,10 +1,11 @@
 import { ABSENT } from './absent';
 import validators from './validators';
-import FilteredSubject from './FilteredSubject';
+import SubjectMeta from './SubjectMeta';
 import MetaList from './MetaList';
 import Meta from './Meta';
 import ValueStore from './ValueStore';
+import SubjectBlock from './SubjectBlock';
 
 export default {
-  validators, FilteredSubject, ValueStore, ABSENT, MetaList, Meta,
+  validators, SubjectMeta, ValueStore, ABSENT, MetaList, Meta, SubjectBlock,
 };

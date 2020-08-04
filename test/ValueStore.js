@@ -3,7 +3,9 @@
 const tap = require('tap');
 const p = require('../package.json');
 
-const { ValueStore } = require('../lib');
+const { ValueStore, Meta } = require('../lib');
+
+const positive = new Meta((a) => (a >= 0 ? false : 'must be > 0'), 'positive', 1);
 
 /**
  *  testing basic name, value, deserialization
@@ -89,6 +91,110 @@ tap.test(p.name, (suite) => {
       p.end();
     });
 
+    vs.test('properties - preProcessed', (pp) => {
+      const store = new ValueStore({
+        x: [0, 'number'],
+        y: [0, 'number'],
+        list: [[], 'array'],
+        limitList: [[], 'array'],
+        limit: [10, positive],
+      }).preProcess();
+
+      const latest = {};
+      const latestV = {};
+      const history = [];
+
+      store.subscribe((value) => Object.assign(latest, value));
+      store.subscribeValue((value) => {
+        Object.assign(latestV, value);
+        history.push(value);
+      });
+
+      pp.same(latestV, {
+        x: 0,
+        y: 0,
+        list: [],
+        limitList: [],
+        limit: 10,
+      });
+
+      pp.same(history, [{
+        x: 0,
+        y: 0,
+        list: [],
+        limitList: [],
+        limit: 10,
+      }]);
+
+      store.do.setList('ostrich');
+
+      pp.same(latestV, {
+        x: 0,
+        y: 0,
+        list: [],
+        limitList: [],
+        limit: 10,
+      });
+
+      pp.same(history, [{
+        x: 0,
+        y: 0,
+        list: [],
+        limitList: [],
+        limit: 10,
+      },
+      {
+        x: 0,
+        y: 0,
+        list: [],
+        limitList: [],
+        limit: 10,
+      }]);
+
+      store.do.setList([4, 6, 8]);
+
+      pp.same(latestV, {
+        x: 0,
+        y: 0,
+        list: [4, 6, 8],
+        limitList: [],
+        limit: 10,
+      });
+
+      pp.same(history, [{
+        x: 0,
+        y: 0,
+        list: [],
+        limitList: [],
+        limit: 10,
+      },
+      {
+        x: 0,
+        y: 0,
+        list: [],
+        limitList: [],
+        limit: 10,
+      },
+      {
+        x: 0,
+        y: 0,
+        list: [
+          4,
+          6,
+          8,
+        ],
+        limitList: [],
+        limit: 10,
+      },
+      ]);
+
+      const { list } = store.my;
+      list.push(10);
+      store.do.setList(list);
+      pp.notOk(store.my.list === list ); // referential association broken by preprocessor
+      pp.end();
+    });
+
     vs.test('my', (p) => {
       const store = new ValueStore({ x: 0, y: 0 });
 
@@ -141,14 +247,45 @@ tap.test(p.name, (suite) => {
       virt.end();
     });
 
-    vs.test('select', (s) =>{
+    vs.test('select', (s) => {
       const selectValues = [];
 
-      const list = new ValueStore({x: 0, y: 0, z: 0});
-      list.select('x', 'y').subscribe()
+      const list = new ValueStore({ x: 0, y: 0, z: 0 });
+      list.selectValues('x', 'y').subscribe((update) => selectValues.push(update));
+
+      s.same(selectValues, [{ x: 0, y: 0 }]);
+
+      list.do.setX(2);
+      s.same(selectValues, [{ x: 0, y: 0 }, { x: 2, y: 0 }]);
+
+      list.do.setZ(4);
+      s.same(selectValues, [{ x: 0, y: 0 }, { x: 2, y: 0 }]);
 
       s.end();
-    })
+    });
+    vs.test('select with virtuals', (s) => {
+      const selectValues = [];
+
+      const list = new ValueStore({ x: 0, y: 0, z: 0 });
+      list.virtual('xyMag', ({ x, y }) => parseFloat(
+        Math.sqrt(x ** 2 + y ** 2).toFixed(2),
+      ), 'x', 'y');
+      list.selectValues('x', 'y', 'xyMag').subscribe((update) => selectValues.push(update));
+
+      s.same(selectValues, [{ x: 0, y: 0, xyMag: 0 }]);
+
+      list.do.setX(2);
+      s.same(selectValues, [{ x: 0, y: 0, xyMag: 0 }, { x: 2, y: 0, xyMag: 2 }]);
+
+      list.do.setZ(4);
+      s.same(selectValues, [{ x: 0, y: 0, xyMag: 0 }, { x: 2, y: 0, xyMag: 2 }]);
+
+      list.do.setY(3);
+      s.same(selectValues, [{ x: 0, y: 0, xyMag: 0 }, { x: 2, y: 0, xyMag: 2 },
+        { x: 2, y: 3, xyMag: 3.61 }]);
+
+      s.end();
+    });
 
     vs.end();
   });

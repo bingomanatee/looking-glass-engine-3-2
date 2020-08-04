@@ -1,11 +1,6 @@
 import { proppify } from '@wonderlandlabs/propper';
-import lGet from 'lodash/get';
-import val from './validators';
+import val, { isFunction, isObject, isString } from './validators';
 import { ABSENT, isAbsent } from './absent';
-
-const isFunction = val.is('function');
-const isObject = val.is('object');
-const isString = val.is('string');
 
 export default class Meta {
   constructor(test, params, pOrder = ABSENT) {
@@ -50,7 +45,7 @@ Meta.create = (f) => {
   let name = '';
   let test;
   if (isFunction(f)) {
-    name = lGet(f, 'name', '');
+    name = f.name || '';
     test = f;
   } else if (isString(f)) {
     if (val.has(f)) {

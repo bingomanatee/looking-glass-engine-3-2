@@ -4,6 +4,13 @@ const val = validators();
 
 export default val;
 
+export const isFunction = val.is('function');
+export const isArray = val.is('array');
+export const isObject = val.is('object');
+export const isString = val.is('string');
+export const isNumber = val.is('number');
+export const isMap = val.is('map');
+export const isSet = val.is('set');
 /*
 import { isAbsent, hasValue, ABSENT } from './absent';
 
