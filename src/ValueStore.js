@@ -1,7 +1,8 @@
 import { Subject, combineLatest, BehaviorSubject } from 'rxjs';
-import { map } from 'rxjs/operators';
+import { distinctUntilChanged, map } from 'rxjs/operators';
 import { identifier } from 'safe-identifier';
 import upperFirst from 'lodash/upperFirst';
+import uniq from 'lodash/uniq';
 import { proppify } from '@wonderlandlabs/propper';
 import flatten from 'lodash/flattenDeep';
 import val from './validators';
@@ -15,8 +16,12 @@ const isArray = val.is('array');
 const isString = val.is('string');
 const isNumber = val.is('number');
 const isObject = val.is('object');
+const isFunction = val.is('function');
 
 const NOOP = () => {};
+const NOOP_SUBJECT = new BehaviorSubject(null);
+
+// @TODO: namespace conflict between virtuals and properties.
 
 export default class ValueStore {
   constructor(initial = {}, actions = {}, virtuals = {}) {
@@ -24,17 +29,38 @@ export default class ValueStore {
     this._subject.subscribe(NOOP, NOOP, () => this._closeSets());
 
     this._init(initial);
-    this.actions(actions);
-    this.virtuals(virtuals);
+    this._initActions(actions);
+    this._initVirtuals(virtuals);
   }
 
-  virtuals(obj) {
+  select(...fields) {
+    const properties = uniq(flatten(fields));
+
+    const streams = properties.map((property) => {
+      if (this.streams.has(property)) return this.streams.get(property).subject;
+      if (this._virtuals.has(property)) return this._virtuals.get(property).subject;
+      return NOOP_SUBJECT;
+    });
+    const selectStream = combineLatest(streams)
+      .pipe(
+        distinctUntilChanged(),
+        map((values) => properties.reduce((out, property, i) => {
+          out[property] = values[i];
+          return out;
+        }, {})),
+      );
+
+    this.subject.subscribe(NOOP, NOOP, () => selectStream.complete());
+    return selectStream;
+  }
+
+  _initVirtuals(obj) {
     Object.keys(obj).forEach((method) => {
       this.virtual(method, ...flatten(obj[method]));
     });
   }
 
-  actions(obj) {
+  _initActions(obj) {
     Object.keys(obj).forEach((method) => {
       this.action(method, obj[method]);
     });
@@ -62,7 +88,6 @@ export default class ValueStore {
       }
     });
 
-    this._initDo();
     this._updateStream();
     this._initialized = true;
   }
@@ -86,16 +111,12 @@ export default class ValueStore {
   }
 
   _initDo() {
-    this._initDoSetters();
-  }
-
-  _initDoSetters() {
     this._doSetters = {};
     this.streams.forEach((stream, name) => {
       const method = `set${upperFirst(identifier(name))}`;
       this._doSetters[method] = (value) => {
         stream.next(value);
-        const meta = stream.meta;
+        const { meta } = stream;
         if (meta.length) return meta;
         return false;
       };
@@ -164,6 +185,9 @@ export default class ValueStore {
 
   get value() {
     const out = {};
+    this._virtuals.forEach((virtual, name) => {
+      out[name] = virtual.value;
+    });
     this.streams.forEach((stream, name) => {
       out[name] = stream.value;
     });
@@ -215,7 +239,7 @@ export default class ValueStore {
     this._closeSets();
   }
 
-  property(name, value, ...filters) {
+  _makeProperty(name, value, ...filters) {
     testPropertyName(name);
     if (this.streams.has(name)) {
       throw new Error(`cannot redefine ${name}`);
@@ -224,6 +248,10 @@ export default class ValueStore {
     const stream = new FilteredSubject(value, filters);
 
     this.streams.set(name, stream);
+  }
+
+  property(name, value, ...filters) {
+    this._makeProperty(name, value, ...filters);
     if (this._initialized) {
       this._updateStream();
     }
@@ -232,7 +260,7 @@ export default class ValueStore {
 
   _updateStream() {
     if (this._relay) {
-      this._relay.unsubscribe();
+      this._relay.complete();
     }
 
     const keys = Array.from(this.streams.keys());
@@ -251,7 +279,7 @@ export default class ValueStore {
       .subscribe((currentValues) => {
         this._subject.next(currentValues);
       }, (err) => this._subject.error(err), () => this._subject.complete());
-    this._initDoSetters();
+    this._initDo();
   }
 }
 

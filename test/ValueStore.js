@@ -103,6 +103,53 @@ tap.test(p.name, (suite) => {
       p.end();
     });
 
+    vs.test('actions', (p) => {
+      const store = new ValueStore({ x: 0, y: 0 }, {
+        scale: (s, m) => {
+          s.do.setX(s.my.x * m);
+          s.do.setY(s.my.y * m);
+        },
+      });
+
+      store.do.setX(2);
+      store.do.setY(3);
+      store.do.scale(2);
+
+      p.same(store.my.x, 4);
+      p.same(store.my.y, 6);
+
+      p.end();
+    });
+
+    vs.test('virtuals', (virt) => {
+      const store = new ValueStore({ x: 0, y: 0 }, {
+        scale: (s, m) => {
+          s.do.setX(s.my.x * m);
+          s.do.setY(s.my.y * m);
+        },
+      }, { magnitude: [({ x, y }) => Math.sqrt(x ** 2 + y ** 2), 'x', 'y'] });
+
+      store.do.setX(2);
+      store.do.setY(3);
+      virt.same(Math.floor(store.my.magnitude * 100), 360); // get a few points of float but reduce decimals
+      store.do.scale(2);
+
+      virt.same(store.my.x, 4);
+      virt.same(store.my.y, 6);
+      virt.same(Math.floor(store.my.magnitude * 100), 721); // get a few points of float but reduce decimals
+
+      virt.end();
+    });
+
+    vs.test('select', (s) =>{
+      const selectValues = [];
+
+      const list = new ValueStore({x: 0, y: 0, z: 0});
+      list.select('x', 'y').subscribe()
+
+      s.end();
+    })
+
     vs.end();
   });
 
