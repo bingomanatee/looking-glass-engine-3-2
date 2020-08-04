@@ -3,10 +3,12 @@ import { map } from 'rxjs/operators';
 import { identifier } from 'safe-identifier';
 import upperFirst from 'lodash/upperFirst';
 import { proppify } from '@wonderlandlabs/propper';
+import flatten from 'lodash/flattenDeep';
 import val from './validators';
 
 import testPropertyName from './testPropertyName';
 import FilteredSubject from './FilteredSubject';
+import Virtual from './Virtual';
 import { ABSENT, isAbsent } from './absent';
 
 const isArray = val.is('array');
@@ -17,18 +19,26 @@ const isObject = val.is('object');
 const NOOP = () => {};
 
 export default class ValueStore {
-  constructor(initial = {}, actions = {}) {
+  constructor(initial = {}, actions = {}, virtuals = {}) {
     this._subject = new BehaviorSubject({});
     this._subject.subscribe(NOOP, NOOP, () => this._closeSets());
 
     this._init(initial);
     this.actions(actions);
+    this.virtuals(virtuals);
+  }
+
+  virtuals(obj) {
+    Object.keys(obj).forEach((method) => {
+      this.virtual(method, ...flatten(obj[method]));
+    });
   }
 
   actions(obj) {
     Object.keys(obj).forEach((method) => {
       this.action(method, obj[method]);
     });
+    return this;
   }
 
   action(name, fn) {
@@ -57,6 +67,15 @@ export default class ValueStore {
     this._initialized = true;
   }
 
+  virtual(name, fn, ...fields) {
+    const method = identifier(name);
+    if (this._virtuals.has(method)) {
+      throw new Error(`cannot redefine ${method}`);
+    }
+    this._virtuals.set(method, new Virtual(this, fn, fields));
+    return this;
+  }
+
   _closeSets() {
     this.subSets.forEach((s) => s.unsubscribe());
     this.subSets.clear();
@@ -74,7 +93,12 @@ export default class ValueStore {
     this._doSetters = {};
     this.streams.forEach((stream, name) => {
       const method = `set${upperFirst(identifier(name))}`;
-      this._doSetters[method] = (value) => stream.next(value);
+      this._doSetters[method] = (value) => {
+        stream.next(value);
+        const meta = stream.meta;
+        if (meta.length) return meta;
+        return false;
+      };
     });
   }
 
@@ -109,6 +133,9 @@ export default class ValueStore {
         if (store.streams.has(property)) {
           return store.streams.get(property).value;
         }
+        if (store._virtuals.has(property)) {
+          return store._virtuals.get(property).value;
+        }
         throw Object.assign(new Error(`attempt to call undefined property ${property}`), { store });
       },
     };
@@ -142,6 +169,13 @@ export default class ValueStore {
     });
 
     return out;
+  }
+
+  values(...fields) {
+    return flatten(fields).reduce((out, field) => {
+      out[field] = this.streams.has(field) ? this.streams.get(field).value : null;
+      return out;
+    }, {});
   }
 
   get subject() {
@@ -224,4 +258,5 @@ export default class ValueStore {
 proppify(ValueStore)
   .addProp('subSets', () => new Set())
   .addProp('_actions', () => ({}))
-  .addProp('streams', () => new Map());
+  .addProp('streams', () => new Map())
+  .addProp('_virtuals', () => new Map());

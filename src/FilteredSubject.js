@@ -20,6 +20,10 @@ export default class FilteredSubject {
     this._initSubject();
   }
 
+  get meta() {
+    return this._metaList.annotate(this.value);
+  }
+
   _initMeta(initialValue, filters) {
     this._metaList = new MetaList(filters);
     this.lastValid = this._metaList.annotate(initialValue, this).length ? undefined : initialValue;
