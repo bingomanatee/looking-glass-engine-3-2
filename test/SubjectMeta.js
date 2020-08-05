@@ -75,6 +75,7 @@ tap.test(p.name, (suite) => {
       name: 'number',
       meta: 'number',
       message: 'must be number',
+      type: 'error'
     }]);
 
     count.next(3);

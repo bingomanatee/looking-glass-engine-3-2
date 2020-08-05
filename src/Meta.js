@@ -9,10 +9,11 @@ export default class Meta {
       this.name = params;
     } else if (isObject(params)) {
       const {
-        name = '', order = 1, config,
+        name = '', order = 1, config, type = 'error'
       } = params;
       this.name = name;
       this.order = order;
+      this.type = 'error';
       this.config = config;
     }
     if (!isAbsent(pOrder)) {
@@ -24,7 +25,7 @@ export default class Meta {
     const message = this.test(value, errors, this.config);
     if (!message) return null;
     if (isString(message)) {
-      return { message, name: this.name };
+      return { message, name: this.name, type: this.type };
     }
     return message;
   }
@@ -59,5 +60,6 @@ Meta.create = (f) => {
 proppify(Meta)
   .addProp('name', '', 'string')
   .addProp('config', null)
+  .addProp('type', 'error', 'string')
   .addProp('order', 1) // can be a number or string
   .addProp('test', () => false, 'function');

@@ -5,7 +5,7 @@ import { proppify } from '@wonderlandlabs/propper';
 import flatten from './flatten';
 import val, { isArray, isFunction, isString } from './validators';
 
-import testPropertyName from './testPropertyName';
+import testPropName from './testPropertyName';
 import SubjectMeta from './SubjectMeta';
 import Virtual from './Virtual';
 import {
@@ -22,7 +22,7 @@ export default class ValueStore {
     this._subject = new BehaviorSubject({});
     this._subject.subscribe(NOOP, NOOP, () => this._closeSets());
 
-    this._init(initial);
+    this._initStreams(initial);
     this._initActions(actions);
     this._initVirtuals(virtuals);
   }
@@ -30,16 +30,16 @@ export default class ValueStore {
   select(...fields) {
     const properties = uniq(flatten(fields));
 
-    const streams = properties.map((property) => {
-      if (this.streams.has(property)) return this.streams.get(property).subject;
-      if (this._virtuals.has(property)) return this._virtuals.get(property).subject;
+    const streams = properties.map((prop) => {
+      if (this.streams.has(prop)) return this.streams.get(prop).subject;
+      if (this._virtuals.has(prop)) return this._virtuals.get(prop).subject;
       return NOOP_SUBJECT;
     });
     const selectStream = combineLatest(streams)
       .pipe(
         distinctUntilChanged(),
-        map((values) => properties.reduce((out, property, i) => {
-          out[property] = values[i];
+        map((values) => properties.reduce((out, prop, i) => {
+          out[prop] = values[i];
           return out;
         }, {})),
       );
@@ -48,21 +48,21 @@ export default class ValueStore {
     return selectStream;
   }
 
-  get propertyNames() {
+  get propNames() {
     return Array.from(this.streams.keys());
   }
 
   preProcess(name, fn) {
     if (!name) {
-      this.propertyNames.forEach((n) => this.preProcess(n));
+      this.propNames.forEach((n) => this.preProcess(n));
       return this;
     }
     if (isFunction(name)) {
       fn = name;
-      name = this.propertyNames.pop();
+      name = this.propNames.pop();
     }
     if (!this.streams.has(name)) {
-      throw new Error(`preProcess cannot find property ${name}`);
+      throw new Error(`preProcess cannot find prop ${name}`);
     }
     this.streams.get(name).preProcess(fn);
     return this;
@@ -72,18 +72,18 @@ export default class ValueStore {
     const properties = uniq(flatten(fields));
     const virtuals = [];
 
-    const streams = properties.map((property) => {
-      if (this.streams.has(property)) return this.streams.get(property).subject;
-      if (this._virtuals.has(property)) {
-        virtuals.push(property);
+    const streams = properties.map((prop) => {
+      if (this.streams.has(prop)) return this.streams.get(prop).subject;
+      if (this._virtuals.has(prop)) {
+        virtuals.push(prop);
       }
       return NOOP_SUBJECT;
     });
     const selectStream = combineLatest(streams)
       .pipe(
         distinctUntilChanged(),
-        map((values) => properties.reduce((out, property, i) => {
-          out[property] = virtuals.includes(property) ? this._virtuals.get(property).value : values[i].value;
+        map((values) => properties.reduce((out, prop, i) => {
+          out[prop] = virtuals.includes(prop) ? this._virtuals.get(prop).value : values[i].value;
           return out;
         }, {})),
       );
@@ -112,7 +112,7 @@ export default class ValueStore {
     this._actions[method] = (...args) => fn(this, ...args);
   }
 
-  _init(obj) {
+  _initStreams(obj) {
     if (this._relay) {
       this._relay.unsubscribe();
     }
@@ -120,9 +120,9 @@ export default class ValueStore {
     Object.keys(obj).forEach((key) => {
       const stream = obj[key];
       if (isArray(stream)) {
-        this.property(key, ...stream);
+        this._makeProp(key, ...stream);
       } else {
-        this.property(key, stream);
+        this._makeProp(key, stream);
       }
     });
 
@@ -163,14 +163,14 @@ export default class ValueStore {
 
   get _doHandler() {
     return {
-      get(store, property) {
-        if (store._doSetters[property]) {
-          return store._doSetters[property];
+      get(store, prop) {
+        if (store._doSetters[prop]) {
+          return store._doSetters[prop];
         }
-        if (store._actions[property]) {
-          return store._actions[property];
+        if (store._actions[prop]) {
+          return store._actions[prop];
         }
-        throw Object.assign(new Error(`attempt to call undefined action ${property}`), { store });
+        throw Object.assign(new Error(`attempt to call undefined action ${prop}`), { store });
       },
     };
   }
@@ -188,14 +188,14 @@ export default class ValueStore {
 
   get _myHandler() {
     return {
-      get(store, property) {
-        if (store.streams.has(property)) {
-          return store.streams.get(property).value;
+      get(store, prop) {
+        if (store.streams.has(prop)) {
+          return store.streams.get(prop).value;
         }
-        if (store._virtuals.has(property)) {
-          return store._virtuals.get(property).value;
+        if (store._virtuals.has(prop)) {
+          return store._virtuals.get(prop).value;
         }
-        throw Object.assign(new Error(`attempt to call undefined property ${property}`), { store });
+        throw Object.assign(new Error(`attempt to call undefined prop ${prop}`), { store });
       },
     };
   }
@@ -277,20 +277,55 @@ export default class ValueStore {
     this._closeSets();
   }
 
-  _makeProperty(name, value, ...filters) {
-    testPropertyName(name);
+  _makeProp(name, value, ...filters) {
+    this._propsToValue = null;
+    testPropName(name);
     if (this.streams.has(name)) {
       throw new Error(`cannot redefine ${name}`);
     }
 
     const stream = new SubjectMeta(value, filters);
     stream.store = this;
+    stream.name = name;
 
     this.streams.set(name, stream);
   }
 
-  property(name, value, ...filters) {
-    this._makeProperty(name, value, ...filters);
+  get props() {
+    if (this._propProxy) {
+      return this._propProxy;
+    }
+    return this._propsToValue();
+  }
+
+  get _propProxy() {
+    if (!this.__propProxy) {
+      if (typeof Proxy !== 'undefined') {
+        this.__propProxy = new Proxy(this, {
+          get(store, prop) {
+            return store.streams.get(prop);
+          },
+        });
+      } else {
+        this.__propProxy = ABSENT;
+      }
+    }
+    const out = isAbsent(this.__propProxy) ? false : this.__propProxy;
+    return out;
+  }
+
+  _propsToValue() {
+    if (!this.__propsToValue) {
+      this.__propsToValue = {};
+      this.streams.forEach((stream, name) => {
+        this.__propsToValue[identifier(name)] = stream;
+      });
+    }
+    return this.__propsToValue;
+  }
+
+  prop(name, value, ...filters) {
+    this._makeProp(name, value, ...filters);
     if (this._initialized) {
       this._updateStream();
     }
@@ -312,7 +347,6 @@ export default class ValueStore {
           return out;
         }, {});
 
-        // console.log('_updateStream: streamValues:', streamValues, 'valueObj:', valueObj);
         return valueObj;
       }))
       .subscribe((currentValues) => {

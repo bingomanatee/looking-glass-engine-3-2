@@ -1,6 +1,6 @@
 import { proppify } from '@wonderlandlabs/propper';
 import flatten from './flatten';
-import val, { isObject } from './validators';
+import val, { isObject, isArray } from './validators';
 import Meta from './Meta';
 
 const EMPTY_MAP = new Map();
@@ -15,7 +15,7 @@ export default class MetaList {
 
   constructor(...metas) {
     this._initMeta(metas);
-    this.annotate = this.annotate.bind(this);
+    this.getMeta = this.getMeta.bind(this);
     this.orderMetas = this.orderMetas.bind(this);
   }
 
@@ -80,29 +80,23 @@ export default class MetaList {
     return ordered;
   }
 
-  annotate(value, context) {
+  getMeta(value, context) {
     const metaMap = this.orderMetas();
     const results = [];
-
-    //   console.log('testing', value, 'against annotate map:', metaMap);
 
     // eslint-disable-next-line no-labels,no-restricted-syntax
     eachLevel:
     for (const level of metaMap.keys()) {
       const metas = metaMap.get(level);
-      //  console.log('annotate - level ', level, 'metas:', metas);
       if (results.length) {
         break;
       }
       for (const meta of metas) {
         const message = meta.process(value, results, context);
-        // console.log('    found message', message, 'for', meta);
         if (isObject(message)) {
-          const { stop, message: innerMessage } = message;
-          if (innerMessage) {
-            results.push({ ...message, level, meta: meta.name || meta.test });
-          }
-          if (stop) {
+          results.push({ ...message, level, meta: meta.name || meta.test });
+
+          if (message.stop) {
             // eslint-disable-next-line no-labels
             break eachLevel;
           }
@@ -115,6 +109,18 @@ export default class MetaList {
     return results;
   }
 }
+
+MetaList.hasMetas = (filter) => {
+  if (isArray(filter)) {
+    return filter.filter(Meta.goodFilter).length;
+  }
+  return Meta.goodFilter(filter);
+};
+
+MetaList.errors = (list) => {
+  if (!list.length) return false;
+  return list.filter(({ type }) => type === 'error').length;
+};
 
 proppify(MetaList)
   .addProp('orderKeys', () => ['required', 'type', 0, 1, 2], 'array')

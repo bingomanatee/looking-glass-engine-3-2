@@ -1,5 +1,7 @@
 /* eslint-disable camelcase */
 
+import { isNumber } from '../src/validators';
+
 const tap = require('tap');
 const p = require('../package.json');
 
@@ -40,7 +42,7 @@ tap.test(p.name, (suite) => {
       p.end();
     });
 
-    vs.test('properties - filtered', (p) => {
+    vs.test('properties - meta', (p) => {
       const store = new ValueStore({ x: [0, 'number'], y: [0, 'number'] });
 
       const latest = {};
@@ -73,6 +75,7 @@ tap.test(p.name, (suite) => {
         name: 'number',
         level: 1,
         meta: 'number',
+        type: 'error',
       }]);
 
       p.same(latestV.x, 2);
@@ -89,6 +92,53 @@ tap.test(p.name, (suite) => {
       p.same(latestV.y, 4);
 
       p.end();
+    });
+
+    vs.test('properties - annotation (non error meta)', (nem) => {
+      const store = new ValueStore({
+        x: [0, 'number'],
+        y: [0, 'number'],
+      });
+
+      const latest = {};
+      store.subscribe((value) => {
+        Object.assign(latest, value);
+      });
+
+      const absf = (a) => ({
+        message: isNumber(a) ? Math.abs(a) : 0,
+        type: 'info',
+        name: 'abs',
+      });
+
+      const abs = [absf, { name: 'abs' }, 2];
+      store.props.x.addMeta(...abs);
+      store.props.y.addMeta(...abs);
+
+      store.do.setX(-1);
+
+      nem.same(latest.x.meta, [{
+        meta: 'abs',
+        message: 1,
+        type: 'info',
+        name: 'abs',
+        level: 2,
+      }]);
+
+      nem.same(latest.x.lastValid, -1); // -1 is allowed even with meta because there are no errors;
+
+      store.do.setX('string');
+
+      nem.same(latest.x.meta, [
+        {
+          message: 'must be number',
+          name: 'number',
+          type: 'error',
+          level: 1,
+          meta: 'number',
+        }]); // update should get blocked by type error; also abs is level 2 and so, not processed
+
+      nem.end();
     });
 
     vs.test('properties - preProcessed', (pp) => {
@@ -191,7 +241,7 @@ tap.test(p.name, (suite) => {
       const { list } = store.my;
       list.push(10);
       store.do.setList(list);
-      pp.notOk(store.my.list === list ); // referential association broken by preprocessor
+      pp.notOk(store.my.list === list); // referential association broken by preprocessor
       pp.end();
     });
 

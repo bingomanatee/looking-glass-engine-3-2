@@ -55,7 +55,7 @@ of tests is AND as in, every test in the array must pass or the validation is
 considered a failure. Unlike javascript && logic, every test in the array is always
 processed regardless of the outcomes of the previous tests. 
 
-## annotate
+## getMeta
 `(value = ABSENT singleError? = false)`
 
 tests a value against the filter. returns an array of errors - empty if valid. 

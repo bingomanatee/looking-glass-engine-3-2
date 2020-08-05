@@ -29,6 +29,8 @@ const PREPROCESSORS = {
  * it can optionally have a preprocessing filter that sanitizes values before they are
  * expressed as the next value, to for instance destructure arrays & objects into new references;
  *
+ * note - the heavy lifting for filters is done by _metaList. This class instance of MetaList
+ * is omitted if there are no filters.
  */
 export default class SubjectMeta {
   constructor(initialValue = null, meta) {
@@ -38,12 +40,12 @@ export default class SubjectMeta {
   }
 
   get meta() {
-    return this._metaList.annotate(this.value);
+    return this.getMeta(this.value);
   }
 
   preProcess(filter) {
-    const processor = filter || this._metaList.type;
     this._prep = false;
+    const processor = filter || this._metaList.type;
     if (processor) {
       if (isString(processor)) {
         this._prep = PREPROCESSORS[processor];
@@ -56,15 +58,25 @@ export default class SubjectMeta {
   }
 
   _initMeta(initialValue, filters) {
+    this.lastValid = initialValue;
+    if (!MetaList.hasMetas(filters)) {
+      this._metaList = null;
+      return;
+    }
     this._metaList = new MetaList(filters);
-    this.lastValid = this._metaList.annotate(initialValue, this).length ? undefined : initialValue;
+    this.lastValid = this.getMeta(initialValue).length ? undefined : initialValue;
+  }
+
+  getMeta(value) {
+    return (this._metaList) ? this._metaList.getMeta(value, this) : [];
   }
 
   _initSubject() {
     this._subject = this._base.pipe(
+      distinctUntilChanged(this._compare.bind(this)),
       map((value) => {
-        const meta = this._metaList.annotate(value, this);
-        if (!meta.length) {
+        const meta = this.getMeta(value);
+        if (!MetaList.errors(meta)) {
           this.lastValid = value;
         }
         return { value, meta, lastValid: this.lastValid };
@@ -72,17 +84,49 @@ export default class SubjectMeta {
     );
   }
 
+  _compare(a, b) {
+    return this.__forceUpdate ? false : a === b;
+  }
+
   _initBase(initialValue) {
     this.value = initialValue;
-    this._base = new BehaviorSubject(initialValue)
-      .pipe(distinctUntilChanged());
+    this._base = new BehaviorSubject(initialValue);
     this._base.subscribe((v) => {
       this.value = v;
     });
   }
 
-  addMeta(test, name = '', order = 1) {
-    this._metaList.add(new Meta(test, name, order));
+  addMeta(...params) {
+    const meta = new Meta(...params);
+    if (!this._metaList) {
+      this._metaList = new MetaList(meta);
+    } else {
+      this._metaList.add(meta);
+    }
+    this.force();
+  }
+
+  force() {
+    this.__forceUpdate = true;
+    this.next(this.value);
+  }
+
+  /**
+   * this is a magic property -- accessing it once will set it to false
+   * -- but its previous current value will be returned.
+   *
+   * @returns {boolean}
+   * @private
+   */
+  get __forceUpate() {
+    const out = !!this.___forceUpdate;
+    this.___forceUpdate = false;
+
+    return out;
+  }
+
+  set __forceUpdate(v) {
+    this.___forceUpdate = !!v;
   }
 
   get subject() {
@@ -94,8 +138,7 @@ export default class SubjectMeta {
   }
 
   next(value) {
-    if (this._prep) this._base.next(this._prep(value));
-    else this._base.next(value);
+    this._base.next(this._prep ? this._prep(value) : value);
   }
 
   complete() {
