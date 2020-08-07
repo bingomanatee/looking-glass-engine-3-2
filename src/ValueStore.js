@@ -149,6 +149,8 @@ export default class ValueStore {
     this._actions[method] = (...args) => fn(this, ...args);
   }
 
+  method(...args) { return this.action(...args); } // for backwards compatibility
+
   _initStreams(obj) {
     if (this._relay) {
       this._relay.unsubscribe();
@@ -192,8 +194,7 @@ export default class ValueStore {
       this._doSetters[method] = (value) => {
         stream.next(value);
         const { meta } = stream;
-        if (meta.length) return meta;
-        return false;
+        return (meta && meta.length) ? meta : false;
       };
     });
   }
@@ -368,6 +369,8 @@ export default class ValueStore {
     this._updateStream();
     return this;
   }
+
+  property(...args) { return this.prop(...args); }
 
   /**
    * executes a function, interrupting all the updates until it is done.

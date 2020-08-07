@@ -418,6 +418,13 @@ a Proxy (1) that has as its props:
 1. all the setters for the defined streams
 2. any actions you define with the second object or the `.action(...)` method
 
+note - all setters return an array of metas -- unless they are empty so if you want to 
+respond to errors immediately, you can:
+
+```javascript
+if (const [err] = store.setX(x)) throw err;
+```
+
 ## my
 * `.my: (proxy)`
 a Proxy (1) that has as its properties the current value of the streams
