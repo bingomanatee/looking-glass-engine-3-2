@@ -147,6 +147,7 @@ export default class ValueStore {
     if (this._actions[method]) throw new Error(`cannot redefine action ${method}`);
 
     this._actions[method] = (...args) => fn(this, ...args);
+    return this;
   }
 
   method(...args) { return this.action(...args); } // for backwards compatibility
