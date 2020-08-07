@@ -28,3 +28,13 @@ Allowed objects as validators for the purpose of developing formal
 
 updated lodash reflecting github security prompt;
 reflected 'is' package is no longer a dependency outside the tests
+
+# 3.3.0
+
+A complete rebuild; transporting sometimes use features like filters (now meta) and blocking into utility classes. 
+
+* Eliminated use of lodash for size minimization
+* Using @wonderlandlabs/validation for reduction of type validation features
+* Redesigned emissions model to allow for submission of invalid values. 
+* Errors renamed meta for a host of use cases including errors, annotation. 
+

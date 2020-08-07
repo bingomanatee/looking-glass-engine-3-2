@@ -1,242 +1,448 @@
 # ValueStore
- `<= ValueStream`
 
-ValueStreams are useful in their own right but ValueStores are the overarching
-product of LGE. A ValueStore is a set of streams and methods to update the streams.
+A ValueStore instance is a tree of values; it operates as a dictionary of streams, 
+one per value -- SubjectMeta instances.  These work like fields in a Redux object. 
 
-ValueStores are themselves ValueStreams. 
+Additionally, there are virtuals that passively recalculate derived values. 
 
-The children of ValueStreams are called "properties"; this is an OOP-ism. 
+Lastly, actions are available that modify the value of ValueStores. They are optional,
+as modifying ValueStores with external functions is identical to calling actions, but it 
+is handy to have them hanging off the store. 
 
-## constructor
-`(name: string, values?: {Object}, methods? {Object})`
+One of the value of using RxJS is you can control streams; toward this end you can group 
+two or more changes into a single update using the block(fn) method. 
 
-The "value" of a store is the summary of all the key/value pairs of its children. 
- 
-The streamed value of a store is *itself* that is emitted over and over to its subscribers
-on changes to any of its child streams. 
+You can track changes in a subset of fields using the select method. 
 
-*Constructor Arguments*:
+## A note on terms
 
-`values` can be used to seed properties. They can be name/value pairs
-or name/argument pairs if you want to add validators etc. to the properties. 
+"props" "properties" "streams" are all the same thing - the list of values the store tracks. 
+They are "properties" from an OOP point of view but they are *implemented* using streaming 
+BehaviorSubjects in RxJS so they are also streams. 
 
-`methods` can be used to initialize methods. they are name/function pairs. 
+## The Subscription pattern 
 
-FWIW I personally prefer currying construction of ValueStores but for those
-that want to fully construct a store in the constructor these properties exist. 
+For those unfamiliar with the RxJS Observer syntax, "subscription" is the 
+act of binding a listener to changes in an observable. Observables in RxJS are things that can emit.
+This behavior like an event listener in DOM.
+In its most simple form this is:
 
-## subscribe
-`(onChange, onError, onComplete)`
+```javascript
+const {timer, Subject} = require('rxjs');
 
-unlike ValueStore subscriptions which return the updates to value onChange,
-store subscriptions return itself repeatedly on changes to its properties. 
-Also all property errors are repeated to onError in the form:
-
+const bomb =  timer(0, 100);
+const sub = bomb.subscribe((index) => {
+console.log(index);
+});
+/**
+0
+1
+2
+3
+4
+... and never stops
+*/
 ```
-{ 
-    store: string, // name of this store
-    source: string, // name of the subject that had an error
-    error: Object, // JSON snapshot of the error message
+
+the `.subscribe(listener(s))` has the return value of a subscription 
+that has a single method, "unsubscribe"
+
+```javascript
+const sub = timer(0, 100).subscribe((index) => {
+console.log(index);
+if (sub && index > 3) {
+  sub.unsubscribe();
 }
-```
-
-## METHODS 
-
-Methods are the "actions" of a store. They allow you to write mutators
-that can interact with the store. 
-
-These actions are *not* in any way like Redux methods; they are closer to 
-an OOP Classes' methods. 
-
-The return value of a method is both *optional* and *ignored* by the store itself. 
-Methods can be used to define derived values but are not used to update the store.
-The only way to update the store (and trigger a subscription update) is to 
-set a properties' value. This can be done *never*, *once* or *multiple times* by an action. 
-
-Methods' first argument is the store itself. Any other called arguments are passed 
-in after that. So, the `this` value is not useful (or a good idea) to refer to in the body of an action. 
-that being said, if the `bind` modifier is true the method will be bound to the store. 
-
-Methods are synchronous *by default*. You can return a promise but the method is considered 
-complete (and the transactionality closed) at the end of the synchronous execution of the method. 
-
-By default method errors are trapped and redirected to the errors subject. That can be *bad* if
-you call several methods in a row and expect that they have done their business.
-
-For that reason methods are given a set of behavior modifiers:
-
-### Method modifiers
-
-* `throws` re-throws any errors your function emits or emitted from th errors collection. 
-  this should be "all the errors". 
-* `trans` is not exactly what DB transactions are. Due to references and other things its really
-  not valid to be able to claim the ability to reset a store to a previous state. 
-  What it does do is muffle any change emission that happens in its execution or in any sub-method call
-  executions until its completed. Note that "completed" is a synchronous concept; async
-  functions are not guaranteed to wait to complete before ending the transaction and allowing broadcasts;
-  in fact they are pretty much guaranteed to be impossible to externally freeze. (you can still
-  create transactions inside a method to control broadcast of an async method if you want.)
-* `bind` is for those for whom normal methods have gotten boring and who want to add a little
-  excitement in their code. Just kidding; it uses functional binding to make the "this" reference
-  equal to the store. Not advised, but available. 
-  
-All these switches can be used in any combination to alter application flow to 
-the way you want it to execute. 
-
-Again, all configuration options are optional. 
-
-## method (== addMethod)
-`(name: string, fn: function, options?: {bind:bool, trans:bool, throws: bool})` (alias `method`)
-
-Adds a method to the store. is *not* idempotent; 
-successive attempts to redefine the same method throw errors.
-
-## .do[methodName]
-
-A proxy to all the methods BUT WAIT -- THERE's MORE! When you add a property to the ValueStore
-you get free "setter" methods.
-
-For instance if you add a "count" property you get the methods "setCount(value)" and
-a throwable set, "setCount_ot(value" AT NO ADDITIONAL COST! 
-
-```javascript
-
-const counter = new ValueStore('counter', { count: [0  , 'number']});
-
-counter.subscribe((vs) => console.log(vs.my.count));
-
-counter.do.setCount(1);
-counter.do.setCount_ot('doghnut');
-
-// '1'
-// (throws)
-```
-
-## PROPERTIES
-
-Properties are the value providers for the store. Each property is a ValueStream (see) and  contributes to the 
-collective value of the store. 
-
-## setFilter
-`(name, filter): self`
-
-sets and overrides the filter for a particular property. 
-
-## .value
-`{Object}`
-
-a name/value snapshot of the properties' values. NOTE: this is 
-more expensive than using `#my` if you just want to get one or more 
-properties from a large component so prefer the latter when possible (and if proxies exist.);
-
-## my[propertyName]
-
-.my is a proxy that lets you tunnel and extract the current value of a/some proxies using a Proxy implementation. 
-It is far more efficient than `.values` in most scenarios; given that Proxy is only available in most scenarios. 
-
-```javascript
-
-const threeDcoord = new ValueStream('coord3d', {x: 0, y: 0, z: 0});
-
-const {x, y, z} = threeDcoord.my;
-
-threeDcoord.do.setX(10);
-
-console.log('x was', x, 'and is now', threeDcoord.my.x);
-
-// 'x was', 0, 'and is now', 10
-```
-
-## property (== addProperty == setStream)
-`(name, value, fliter?)` (alias `.setStream`)
-
-defines a property of the ValueStore. Properties cannot be redefined (throws error once a name is taken).
-
-This method creates a ValueStream and attaches it to the streams collection. 
-
-## VIRTUALS
-
-Virtuals are computed values that are derived from the store. They are only computed when retrieved.  The function that defines a virtual *cannot* change the store. a virtual can call another virtual; but  any circular reference (a calls b which calls a) will throw an error. 
-
-Virtuals, like property values, can be accessed off the `.my` proxy. 
-
-```javascript
-
-const coord = new ValueStore('coord2D', { x: 0, y: 0 }, {}, {
-  magnitude: (store) => {
-    return Math.sqrt(store.my.x ** 2 + store.my.y ** 2);
-  },
 });
 
-coord.do.setX(10);
-coord.do.setY(20);
-console.log('magnitude:', coord.my.magnitude)
-// 'magnitude:' 22.360679774997897
+/**
+0
+1
+2
+3
+4
+*/
+```
+
+Subscriptions take a function that a change value from a stream -- or, put 
+another way, listens for values emitted from the stream. 
+
+It also takes two other listeners optionally. 
+Observables, like Promises, either end well
+or do not. Unlike Promises, nothing is returned from the onComplete listener.
+
+```
+const {timer, Subject} = require('rxjs');
+
+const bomb =  timer(0, 100);
+const boomer = new Subject();
+bomb.subscribe((value) => boomer.next(value));
+// note - we are relaying to a Subject as timers don't provide the option to unsubscribe.
+
+const sub = boomer.subscribe((index) => {
+  console.log(index);
+  if (sub && index > 3) {
+    boomer.complete('boom');
+  }
+}, (err)=> console.error(err), (endValue) => {
+  console.log('ended with a ', endValue);
+});
+
+/**
+0
+1
+2
+3
+4
+ended with a  undefined
+*/
+
+``` 
+
+'boom' is not passed through to any listeners. 
+
+the third listener listens for eny errors. An Observed error is not the same as a "catch" -
+it's an intentionally thrown message that indicates a bad shut down. 
+The first error shuts down the Observer, preventing further notification. even if you send 
+`.next(data)` more things, once an error is called on a Subject, it stops broadcasting. 
+
+```javascript
+const {timer, Subject} = require('rxjs');
+
+const bomb =  timer(0, 100);
+const boomer = new Subject();
+bomb.subscribe((value) => {
+  console.log('bomb said', value);
+  boomer.next(value);
+});
+// note - we are relaying to a Subject as timers don't provide the option to unsubscribe.
+
+const sub = boomer.subscribe((index) => {
+  console.log(index);
+  if (index > 3) {
+    boomer.error('boom');
+  }
+},
+  (err)=> console.error('error:', err),
+  (endValue) => {console.log('complete with a ', endValue);
+});
+
+/**
+bomb said 0
+0
+bomb said 1
+1
+bomb said 2
+2
+bomb said 3
+3
+bomb said 4
+4
+error: boom
+bomb said 5
+bomb said 6
+bomb said 7
+bomb said 8...
+*/
+```
+
+### TL;DR
+
+mostly, simply subscribing with a single listening function will do what you want it to. 
+
+## Constructor/creating ValueStore instances
+
+The most basic form of a ValueStore is a list of values with no filtering:
+
+```javascript
+import {ValueStore} from '@wonderlandlabs/looking-glass-engine';
+
+const store = new ValueStore({x: 0, y: 0, z: 0, })
+
+store.subscribeValue((v) => console.log(v));
+// {x: 0, y: 0, z: 0
+
+store.do.setX(100);
+// {x: 100, y: 0, z: 0}
+
+store.do.setY(200);
+// {x: 100, y: 200, z: 0}
 
 ```
 
-## watch 
-`(onChange, field:string, field:string...) : subscription`
+As this shows, the streams named by the keys in the initial object are accessible through the 
+proxy hook  `.my.[property]` 
 
-calls onChange every time one or more of the observed fields (properties or virtuals) changes. If no fields are expressed, returns null.
- 
-(note - the arguments are flattenDeep'd, so you can define fields as an array of strings)
+and spawn setter methods off `.do.set[Property]`. 
 
-`onChange(values:object, store{ValueStore})` is passed an object with key/values from virtual or properties
-as specified by fields. 
+### with actions
 
-note, "change" is murky in javascript. By default watch serializes the field values object (the first parameter) using json-stringify-safe (a variant of JSON.stringify). This is potentially a time-suck; if you want to serialize the object array differently you can pass a second argument for serialization.
+```javascript
+const store = new ValueStore({x: 0, y: 0, z: 0, }, {scale: (s, num) => {
+	s.do.setX(s.my.x * num);
+	s.do.setY(s,my.y * num); 
+	s.do.setZ(s.my.z * num);
+  }
+});
 
-Observe this from the tap tests:
+import {ValueStore} from '@wonderlandlabs/looking-glass-engine';
+
+const store = new ValueStore({x: 0, y: 0, z: 0, })
+
+store.subscribeValue((v) => console.log(v));
+store.do.setX(100);
+store.do.setY(200);
+store.do.scale(3);
+// {x: 300, y: 600, z: 0}
+```
+
+Actions you define are accessible off the `.do` proxy, 
+and the argument list is prepended with a reference 
+to the store itself. Do not use "this" in action definitions.
+
+### with virtuals
+
+The third, optional argument are virtuals. These are mixed in with the properties expressed in `.my` 
+and are derivations of the properties of the store. Virtuals should be immutable and not trigger side
+effects or change properties. 
+
+```javascript
+const store = new ValueStore({x: 0, y: 0, z: 0, }, {scale: (s, num) => {
+	s.do.setX(s.my.x * num);
+	s.do.setY(s,my.y * num); 
+	s.do.setZ(s.my.z * num);
+  }
+}, {
+	magnitude: [({x, y, z}) => Math.sqrt(x ** 2 + y ** 2 + z ** 2), 'x', 'y', 'z' ],
+	normalized: [({x, y, z}) => {
+		const scale = Math.sqrt(x ** 2 + y ** 2 + z ** 2) || 1;
+		return {x: x / scale, y: y/scale, z: z/scale};
+	}, 'x', 'y', 'z' ],
+});
+
+import {ValueStore} from '@wonderlandlabs/looking-glass-engine';
+
+const store = new ValueStore({x: 0, y: 0, z: 0, })
+
+store.subscribeValue((v) => console.log(v));
+store.do.setX(100);
+store.do.setY(200);
+store.do.scale(3);
+// {x: 300, y: 600, z: 0}
+```
+
+### Parametric construction
+
+Instead of passing a wonky set of objects, you can call `.prop(..).action(...).prop(...).virtual(..)`
+to define the store makeup. Personally I *prefer* this style of execution because you
+can group related props and actions together. 
+
+You can also write "factory" functions that take in stores and add functionality using
+these definition functions. 
+
+----
+# Methods
+
+## action
+`.action(name: string, fn: function) : this`
+adds an action to the `.do` proxy. 
+
+Actions have a reference to the store instance prepended to its argument list,
+and can take any number of arguments in addition. 
+
+Actions can call other actions including the `set[Property]` actions, and can 
+return a value. 
+
+```javascript
+const store = new ValueStore({x: 0, y: 0, z: 0, });
+
+store.action('scale', (s, num) => {
+    s.do.setX(s.my.x * num);
+    s.do.setY(s,my.y * num); 
+    s.do.setZ(s.my.z * num);
+    })
+.action('offset', (s, x = 0, y = 0, z = 0) => {
+    s.do.setX(s.my.x + x);
+    s.do.setY(s.my.y + y);
+    s.do.setZ(s.my.z + z);
+});
+
+store.do.setX(10);
+store.do.offset(5, 5, 5);
+console.log('value: ', store.value); 
+// {x: 15, y: 5, z: 5}
+
+store.do.scale(2);
+console.log('value: ', store.value); 
+// {x: 30, y: 10, z: 10}
+```
+
+This is a supplelmental method - actions can also be defined, in bulk, 
+with the second argument to the constructor. 
+
+## block
+`.block(fn: function): [err, result]`
+
+execute a function during which no subscribers recieve changes until the completion 
+of the action. This is useful for supressing unnecessary mid-stage notifications when multiple
+values are changed, which reduces mid-stage renders in systems like React or Angular. 
+
+Any thrown errors are trapped and returned as argument zero of the returned array. 
+
+```javascript
+const store = new ValueStore({x: 0, y: 0, z: 0, });
+
+store.action('scale', (s, num) => {
+    return s.block(() => {
+        s.do.setX(s.my.x * num);
+        s.do.setY(s,my.y * num); 
+        s.do.setZ(s.my.z * num);
+       });
+    });
+store.subscribeValue((v) => console.log(v));
+// {x: 0, y: 0, z: 0}
+store.do.setX(10);
+// {x: 10, y: 0, z: 0}
+store.do.setY(5);
+// {x: 10, y: 5, z: 0}
+store.do.setZ(30);
+// {x: 10, y: 5, z: 30}
+store.do.scale(2);
+// {x: 30, y: 10, z: 60}
+
+```
+
+note-without the block wrapper, each setX, setY, or setZ called inside the action
+would trigger a distinct subscriber alert. 
+
+## broadcast
+* `.broadcast()`
+This method is ordinarily triggered by change in state; but it does force
+a re-notification to all subscribers of the stores' current state. 
+
+## complete
+* `.complete()`
+
+Terminates the subject, and freezes all further subscription notifications. 
+
+## preProcess
+* `.preProcess(name, fn)`
+Adds a function to a named stream that returns an altered version of the input 
+every time a stream is set. 
 
 ```javascript
 
-      const info = [];
-      const person = new ValueStore('person', {
-        first: '', last: '',
-      });
-      person.addVirtual('full', (s) => `${s.my.first} ${s.my.last}`.trim());
+const store = new ValueStrem({firstName: ['', 'string'],
+lastName: ['', 'string']
+});
 
-      person.watch((xy) => {
-        info.push(xy);
-      }, ({ full }) => full.toLowerCase(), ['first', 'last', 'full']);
+const toUpper = (s) => {
+  if (!(typeof s === 'string')) return '';
+  return _.upperFirst(s);
+};
+store.preProcess('lastName', toUpper);
+store.preProcess('firstName', toUpper);
 
-      tWatch.same(info, [
-        { full: '', first: '', last: '' },
-      ]);
+store.subscribeValue((v) => console.log(v));
 
-      person.do.setFirst('bruce');
-      person.do.setLast('Wayne');
-
-      tWatch.same(info, [
-        { full: '', first: '', last: '' },
-        { full: 'bruce', first: 'bruce', last: '' },
-        { full: 'bruce Wayne', first: 'bruce', last: 'Wayne' },
-      ]);
-
-      // this is the critical test - the serializer only looks at the lowercase full name
-      // so changing the case of bruce shouldn't trigger an alert.
-
-      person.do.setFirst('Bruce');
-
-      tWatch.same(info, [
-        { full: '', first: '', last: '' },
-        { full: 'bruce', first: 'bruce', last: '' },
-        { full: 'bruce Wayne', first: 'bruce', last: 'Wayne' },
-      ]);
-
-      person.do.setLast('Jenner');
-
-      // but the change is carried through when the case -insensitve full name does change
-      // as when we change the actual last name
-
-      tWatch.same(info, [
-        { full: '', first: '', last: '' },
-        { full: 'bruce', first: 'bruce', last: '' },
-        { full: 'bruce Wayne', first: 'bruce', last: 'Wayne' },
-        { full: 'Bruce Jenner', first: 'Bruce', last: 'Jenner' },
-      ]);
-
+store.do.setLastName('roberts');
+// {firstName: '', lastName: 'Roberts'}
+store.do.setFirstName('bob');
+// {firstName: 'Bob', lastName: 'Roberts'}
 ```
 
+* `.preProcess(name)`
+
+returns unique/shallow copies of input, based on the type. Arrays/objects are destructured; 
+Maps and Sets are cloned; numbers and functions are replaced with standin values if the input
+is an improper type. 
+
+* `.preProcess()`
+
+## prop
+* `.prop(name, value)`
+* `.prop('name, value, filter)`
+* `.prop('name, value, filter, filter...)`
+
+Defines a property on a store instance. filters can be: 
+
+**a string: name of a common type:**
+* string
+* number
+* array
+* map
+* set
+* object
+
+**a function that returns a string on an error condition**
+note - in this scenario false indicates a *good* value - a string indicates a failure of some sort.
+```
+store.prop('count', 0, 'number', (a) => (a >= 0 ? false : 'must be > 0'))
+```
+# select
+* `.select(propName:string, propName: string...) : Subject`
+returns a stream that observes changes in a subset of the stores' properties. 
+you can call subscribe on the resulting Subject: 
+`store.select('x', 'y').subscribe((state) => console.log('state is ', state))`
+# selectValues
+* `.selectValues(propName:string, propName: string...) : Subject`
+same as select, but instead of returning the full metadata for each property,
+returns the properties' current value. 
+
+# subscribe
+* `.subscribe(onChange, onError, onDone)`
+Listen for changes in the subject (BehaviorSubject)
+# subscribeValue
+* `.subscribeValue(onChange, onErr, onDone)`
+listens to properties/virtuals; but boils down properties to their current values (aka the `value` property),
+ignoring meta/filters and lastValid.
+# values
+* `.values(propName, propName...)`
+# virtual()
+* `.virtual(name, fn: function): {self}`
+* `.virtual(name, fn: function, fieldName... : string): {self}`
+creates a virtual property that calculates a value based on one or more props. 
+The first value the function is passed is an object summary of a set of properties, which are the third 
+and subsequent arguments to the `virtual(..)` function. The second argment is the store itself, 
+so if you want to be lazy you can compute off `store.my.[prop]`. 
+
+The function of a virtual should not have side effects; that is it shouldn't set any property values,
+or do anything other than return a value; that is, it should be 'pure'.
+----
+# Properties
+
+## do 
+* `.do: (proxy)`
+a Proxy (1) that has as its props: 
+
+1. all the setters for the defined streams
+2. any actions you define with the second object or the `.action(...)` method
+
+## my
+* `.my: (proxy)`
+a Proxy (1) that has as its properties the current value of the streams
+
+## propNames
+* `.propNames: [{string}...]`
+an array of the names of the properties (strings) in the order in which they were created. 
+
+## props
+* `.props {proxy}`
+properties/streams are stored internally as a Javascript Map. 
+`props` coerces them into an object. 
+## streams
+* `.streams: {Map}` (readonly)
+the SubjectMeta instances created from the properties defined in the constructor 
+or with the `.property(...)` method
+## subject
+* `.subject: {BehaviorSubject}`
+The source of updates. `store.subject.subscribe(listener...)` is equal to `store.subscribe(listener)`.
+## subjectValue
+A BehaviorSubject that returns the raw value of each stream; the provider for `.subscribeValue`
+## value
+* `.value {Object}`
+An object summarizing the current value of all props, and the virtual values. 
+
+----
+
+* (1) if proxies are not available in the environment an analogous object is created

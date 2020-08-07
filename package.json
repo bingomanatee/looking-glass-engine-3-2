@@ -1,6 +1,6 @@
 {
-  "name": "@wonderlandlabs/looking-glass-engine32",
-  "version": "3.2.5",
+  "name": "@wonderlandlabs/looking-glass-engine",
+  "version": "3.3.0",
   "description": "A state engine for React and others",
   "main": "lib/index.js",
   "module": "es/index.js",
@@ -14,7 +14,8 @@
     "testbo": "TAP_ONLY=1 yarn build; tap test test/* -R=base",
     "test": "tap test test/* -R=base",
     "testo": "TAP_ONLY=1 tap test test/* -R=base",
-    "build": "node_modules/rollup/dist/bin/rollup -c='rollup.config.js'"
+    "build": "node_modules/rollup/dist/bin/rollup -c='rollup.config.js'",
+    "doc": "gitdocs serve"
   },
   "dependencies": {
     "@wonderlandlabs/propper": "3.0.2",
@@ -23,13 +24,14 @@
     "safe-identifier": "^0.4.1"
   },
   "devDependencies": {
-    "eslint": "^6.3.0",
     "babel-eslint": "^10.0.3",
-    "eslint-plugin-react-hooks": "^2.1.1",
+    "eslint": "^6.3.0",
     "eslint-config-airbnb": "^18.0.1",
     "eslint-plugin-import": "^2.18.2",
     "eslint-plugin-jsx-a11y": "^6.2.3",
     "eslint-plugin-react": "^7.14.3",
+    "eslint-plugin-react-hooks": "^2.1.1",
+    "gitdocs": "^2.0.0",
     "is": "^3.3.0",
     "rollup": "^1.22.0",
     "rollup-plugin-bundle-size": "^1.0.3",

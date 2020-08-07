@@ -245,6 +245,100 @@ tap.test(p.name, (suite) => {
       pp.end();
     });
 
+    vs.test('properties: prop', (pr) => {
+      const store = new ValueStore();
+      store.echo = true;
+      store
+        .prop('x', 0)
+        .prop('y', 0, 'number')
+        .prop('z', 0, 'number', positive);
+
+      let latest = {};
+
+      store.subscribe((v) => {
+        latest = v;
+      });
+
+      pr.same(latest, {
+        x: {
+          value: 0,
+          lastValid: 0,
+          meta: [],
+        },
+        y: {
+          value: 0,
+          lastValid: 0,
+          meta: [],
+        },
+        z: {
+          value: 0,
+          lastValid: 0,
+          meta: [],
+        },
+      });
+
+      store.do.setZ(-1);
+
+      pr.same(latest, {
+        x: {
+          value: 0,
+          lastValid: 0,
+          meta: [],
+        },
+        y: {
+          value: 0,
+          lastValid: 0,
+          meta: [],
+        },
+        z: {
+          value: -1,
+          lastValid: 0,
+          meta: [{
+            message: 'must be > 0',
+            name: 'positive',
+            type: 'error',
+            level: 1,
+            meta: 'positive',
+          }],
+        },
+      });
+
+      store.do.setY('foo');
+
+      pr.same(latest, {
+        x: {
+          value: 0,
+          lastValid: 0,
+          meta: [],
+        },
+        y: {
+          value: 'foo',
+          lastValid: 0,
+          meta: [
+            {
+              message: 'must be number',
+              name: 'number',
+              type: 'error',
+              level: 1,
+              meta: 'number',
+            },
+          ],
+        },
+        z: {
+          value: -1,
+          lastValid: 0,
+          meta: [{
+            message: 'must be > 0',
+            name: 'positive',
+            type: 'error',
+            level: 1,
+            meta: 'positive',
+          }],
+        },
+      });
+      pr.end();
+    });
+
     vs.test('my', (p) => {
       const store = new ValueStore({ x: 0, y: 0 });
 
@@ -275,6 +369,58 @@ tap.test(p.name, (suite) => {
       p.same(store.my.y, 6);
 
       p.end();
+    });
+
+    vs.test('actions - with blocks', (ab) => {
+      const store = new ValueStore({ x: 0, y: 0 }, {
+        scale: (s, m) => {
+          s.do.setX(s.my.x * m);
+          s.do.setY(s.my.y * m);
+        },
+
+        scaleBlocked: (s, m) => {
+          s.block(() => {
+            s.do.setX(s.my.x * m);
+            s.do.setY(s.my.y * m);
+          });
+        },
+
+      });
+
+      let history = [];
+
+      const sub = store.subscribeValue((v) => {
+        history.push(v);
+      });
+      store.do.setX(2);
+      store.do.setY(4);
+      history = [];
+
+      store.do.scale(2);
+
+      ab.same(
+        history,
+        [{ x: 4, y: 4 },
+          { x: 4, y: 8 }],
+      );
+
+      const history2 = [];
+      const sub2 = store.subscribeValue((v) => {
+        history2.push(v);
+      });
+
+      store.do.scaleBlocked(3);
+
+      ab.same(
+        history2,
+        [{ x: 4, y: 8 }, { x: 12, y: 24 }],
+      );
+
+      store.complete();
+      sub.unsubscribe();
+      sub2.unsubscribe();
+
+      ab.end();
     });
 
     vs.test('virtuals', (virt) => {
@@ -313,6 +459,7 @@ tap.test(p.name, (suite) => {
 
       s.end();
     });
+
     vs.test('select with virtuals', (s) => {
       const selectValues = [];
 

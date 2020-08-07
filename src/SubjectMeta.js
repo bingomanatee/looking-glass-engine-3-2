@@ -7,16 +7,17 @@ import MetaList from './MetaList';
 import Meta from './Meta';
 import val, {
   isArray, isMap, isFunction, isNumber, isObject, isSet, isString,
-} from './validators';
-import { NOOP } from './absent';
+}             from './validators';
+import { ID } from './absent';
 
 const PREPROCESSORS = {
   array: (value) => (value && isArray(value) ? [...value] : []),
   object: (value) => (value && isObject(value) ? { ...value } : {}),
+  string: (value) => ((isString(value)) ? value : ''),
   number: (value) => (isNumber(value) ? value : 0),
   map: (value) => (isMap(value) ? new Map(value) : new Map()),
   set: (value) => ((isSet(value)) ? new Set(value) : new Set()),
-  function: (value) => (isFunction(value) ? value : NOOP),
+  function: (value) => (isFunction(value) ? value : ID),
 };
 
 /**

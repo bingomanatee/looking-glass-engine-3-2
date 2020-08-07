@@ -1,16 +1,20 @@
-import flatten from './flatten';
 import { distinctUntilChanged } from 'rxjs/operators';
 import { BehaviorSubject } from 'rxjs';
+import flatten from './flatten';
+import { ID } from './absent';
 
 export default class Virtual {
-  constructor(store, fn, ...fields) {
+  constructor(store, fn, ...propNames) {
     this.store = store;
     this.fn = fn;
-    this.fields = flatten(fields);
+    this.propNames = flatten(propNames).filter(ID);
   }
 
   get value() {
-    return this.fn(this.store.values(this.fields), this.store);
+    if (!this.propNames.length) {
+      return this.fn({}, this.store);
+    }
+    return this.fn(this.store.values(this.propNames), this.store);
   }
 
   _makeSubject() {

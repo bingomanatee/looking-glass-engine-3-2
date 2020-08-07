@@ -25,6 +25,18 @@ export default class SubjectBlock {
     this.update();
   }
 
+  do(fn) {
+    const block = this.block();
+    const out = [];
+    try {
+      out[1] = fn();
+    } catch (err) {
+      out[0] = err;
+    }
+    block.done();
+    return out;
+  }
+
   update() {
     this.subject.next(this.blocks.size);
   }
