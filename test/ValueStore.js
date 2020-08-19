@@ -129,16 +129,122 @@ tap.test(p.name, (suite) => {
 
       store.do.setX('string');
 
-      nem.same(latest.x.meta, [
-        {
-          message: 'must be number',
-          name: 'number',
-          type: 'error',
-          level: 1,
-          meta: 'number',
-        }]); // update should get blocked by type error; also abs is level 2 and so, not processed
+      nem.same(latest.x.meta, [{
+        message: 'must be number',
+        name: 'number',
+        type: 'error',
+        level: 1,
+        meta: 'number',
+      }]);
 
       nem.end();
+    });
+
+    vs.test('properties - preProcessed - trows', (pp) => {
+      const store = new ValueStore({
+        x: [0, 'number'],
+        y: [0, 'number'],
+        list: [[], 'array'],
+      }).preProcess('y', (value) => {
+        if (!isNumber(value)) {
+          throw new Error('y must be a number');
+        }
+
+        if (value < 0) {
+          throw new Error('y must be >= 0');
+        }
+
+        return value;
+      });
+
+      const latest = {};
+      const latestV = {};
+      const history = [];
+
+      store.subscribe((value) => Object.assign(latest, value));
+      store.subscribeValue((value) => {
+        Object.assign(latestV, value);
+        history.push(value);
+      });
+
+      store.do.setY(1);
+
+      pp.same(latestV, {
+        x: 0,
+        y: 1,
+        list: [],
+      });
+
+      pp.same(history, [
+        {
+          x: 0,
+          y: 0,
+          list: [],
+        },
+        {
+          x: 0,
+          y: 1,
+          list: [],
+        },
+      ]);
+
+      let error = {};
+      try {
+        store.do.setY(-1);
+      } catch (err) {
+        error = err;
+      }
+
+      const { value, meta, message } = error;
+
+      pp.same(message, 'y must be >= 0');
+
+      pp.same(history, [
+        {
+          x: 0,
+          y: 0,
+          list: [],
+        },
+        {
+          x: 0,
+          y: 1,
+          list: [],
+        },
+      ]);
+
+      pp.same(latestV, {
+        x: 0,
+        y: 1,
+        list: [],
+      });
+
+      store.do.setY(2);
+
+      pp.same(history, [
+        {
+          x: 0,
+          y: 0,
+          list: [],
+        },
+        {
+          x: 0,
+          y: 1,
+          list: [],
+        },
+        {
+          x: 0,
+          y: 2,
+          list: [],
+        },
+      ]);
+
+      pp.same(latestV, {
+        x: 0,
+        y: 2,
+        list: [],
+      });
+
+      pp.end();
     });
 
     vs.test('properties - preProcessed', (pp) => {
@@ -400,8 +506,7 @@ tap.test(p.name, (suite) => {
 
       ab.same(
         history,
-        [{ x: 4, y: 4 },
-          { x: 4, y: 8 }],
+        [{ x: 4, y: 4 }, { x: 4, y: 8 }],
       );
 
       const history2 = [];
@@ -456,19 +561,25 @@ tap.test(p.name, (suite) => {
 
       list.do.setZ(4);
       s.same(selectValues, [{ x: 0, y: 0 }, { x: 2, y: 0 }]);
-
       s.end();
     });
 
     vs.test('select with virtuals', (s) => {
       const selectValues = [];
 
-      const list = new ValueStore({ x: 0, y: 0, z: 0 });
+      const list = new ValueStore({
+        w: 0, x: 0, y: 0, z: 0,
+      });
       list.virtual('xyMag', ({ x, y }) => parseFloat(
         Math.sqrt(x ** 2 + y ** 2).toFixed(2),
       ), 'x', 'y');
-      list.selectValues('x', 'y', 'xyMag').subscribe((update) => selectValues.push(update));
+      list.selectValues('x', 'y', 'xyMag').subscribe((update) => {
+        selectValues.push(update);
+      });
 
+      s.same(selectValues, [{ x: 0, y: 0, xyMag: 0 }]);
+
+      list.do.setW(2);
       s.same(selectValues, [{ x: 0, y: 0, xyMag: 0 }]);
 
       list.do.setX(2);
@@ -480,6 +591,37 @@ tap.test(p.name, (suite) => {
       list.do.setY(3);
       s.same(selectValues, [{ x: 0, y: 0, xyMag: 0 }, { x: 2, y: 0, xyMag: 2 },
         { x: 2, y: 3, xyMag: 3.61 }]);
+
+      s.test('dependent on unselected change', (us) => {
+        const usSelectValues = [];
+
+        const usList = new ValueStore({
+          w: 0, x: 0, y: 0, z: 0,
+        });
+        usList.virtual('xyMag', ({ x, y }) => parseFloat(
+          Math.sqrt(x ** 2 + y ** 2).toFixed(2),
+        ), 'x', 'y');
+
+        usList.selectValues('z', 'xyMag').subscribe((update) => {
+          usSelectValues.push(update);
+        });
+
+        us.same(usSelectValues, [{ z: 0, xyMag: 0 }]);
+
+        usList.do.setW(2);
+        us.same(usSelectValues, [{ z: 0, xyMag: 0 }]);
+
+        usList.do.setX(2);
+        us.same(usSelectValues, [{ z: 0, xyMag: 0 }, { z: 0, xyMag: 2 }]);
+
+        usList.do.setZ(4);
+        us.same(usSelectValues, [{ z: 0, xyMag: 0 }, { z: 0, xyMag: 2 }, { z: 4, xyMag: 2 }]);
+
+        usList.do.setY(3);
+        us.same(usSelectValues, [{ z: 0, xyMag: 0 }, { z: 0, xyMag: 2 }, { z: 4, xyMag: 2 }, { z: 4, xyMag: 3.61 }]);
+
+        us.end();
+      });
 
       s.end();
     });
