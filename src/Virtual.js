@@ -11,22 +11,11 @@ export default class Virtual {
   }
 
   get value() {
-    if (!this.propNames.length) {
-      return this.fn({}, this.store);
-    }
-    return this.fn(this.store.values(this.propNames), this.store);
+    const values = this.hasProps ? this.store.values(this.propNames) : {};
+    return this.fn(values, this.store);
   }
 
-  _makeSubject() {
-    const subject = new BehaviorSubject(this.value);
-    this.store.subscribe(() => subject.next(this.value));
-    return subject.pipe(distinctUntilChanged());
-  }
-
-  get subject() {
-    if (!this._subject) {
-      this._subject = this._makeSubject();
-    }
-    return this._subject;
+  get hasProps() {
+    return !!this.propNames.length;
   }
 }

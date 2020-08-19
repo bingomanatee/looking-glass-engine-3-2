@@ -7,7 +7,7 @@ import MetaList from './MetaList';
 import Meta from './Meta';
 import val, {
   isArray, isMap, isFunction, isNumber, isObject, isSet, isString,
-}             from './validators';
+} from './validators';
 import { ID } from './absent';
 
 const PREPROCESSORS = {
@@ -47,6 +47,7 @@ export default class SubjectMeta {
   preProcess(filter) {
     this._prep = false;
     const processor = filter || this._metaList.type;
+
     if (processor) {
       if (isString(processor)) {
         this._prep = PREPROCESSORS[processor];
@@ -65,7 +66,9 @@ export default class SubjectMeta {
       return;
     }
     this._metaList = new MetaList(filters);
-    this.lastValid = this.getMeta(initialValue).length ? undefined : initialValue;
+    if (MetaList.errors(this.getMeta(initialValue))) {
+      this.lastValid = undefined;
+    }
   }
 
   getMeta(value) {
@@ -80,7 +83,7 @@ export default class SubjectMeta {
         if (!MetaList.errors(meta)) {
           this.lastValid = value;
         }
-        return { value, meta, lastValid: this.lastValid };
+        return Object.assign([value, meta], { value, meta, lastValid: this.lastValid });
       }),
     );
   }
@@ -89,11 +92,15 @@ export default class SubjectMeta {
     return this.__forceUpdate ? false : a === b;
   }
 
+  get value() {
+    return this._value;
+  }
+
   _initBase(initialValue) {
-    this.value = initialValue;
+    this._value = initialValue;
     this._base = new BehaviorSubject(initialValue);
     this._base.subscribe((v) => {
-      this.value = v;
+      this._value = v;
     });
   }
 
@@ -110,6 +117,7 @@ export default class SubjectMeta {
   force() {
     this.__forceUpdate = true;
     this.next(this.value);
+    this.__forceUpdate = false;
   }
 
   /**
@@ -139,7 +147,8 @@ export default class SubjectMeta {
   }
 
   next(value) {
-    this._base.next(this._prep ? this._prep(value) : value);
+    const nextValue = this._prep ? this._prep(value, this.getMeta(value), this) : value;
+    this._base.next(nextValue);
   }
 
   complete() {

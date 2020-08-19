@@ -330,6 +330,8 @@ Terminates the subject, and freezes all further subscription notifications.
 Adds a function to a named stream that returns an altered version of the input 
 every time a stream is set. 
 
+note - if you want to *block* bad values from being submitted you can write a preProcess
+function that throws an error when an unacceptable value is passed in. 
 ```javascript
 
 const store = new ValueStrem({firstName: ['', 'string'],
@@ -350,14 +352,24 @@ store.do.setLastName('roberts');
 store.do.setFirstName('bob');
 // {firstName: 'Bob', lastName: 'Roberts'}
 ```
-
 * `.preProcess(name)`
 
 returns unique/shallow copies of input, based on the type. Arrays/objects are destructured; 
 Maps and Sets are cloned; numbers and functions are replaced with standin values if the input
 is an improper type. 
 
+This is only currently value for a limited number of types: 
+
+* array
+* object
+* string
+* number
+* map
+* set 
+
 * `.preProcess()`
+
+causes all the properties currently defined to preprocess their values based on type. 
 
 ## prop
 * `.prop(name, value)`

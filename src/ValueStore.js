@@ -1,19 +1,19 @@
-import { Subject, combineLatest, BehaviorSubject } from 'rxjs';
-import { distinctUntilChanged, map, filter } from 'rxjs/operators';
+import { BehaviorSubject, combineLatest, Subject } from 'rxjs';
+import { distinctUntilChanged, filter, map } from 'rxjs/operators';
 import { identifier } from 'safe-identifier';
 import { proppify } from '@wonderlandlabs/propper';
 import flatten from './flatten';
-import val, { isArray, isFunction, isString } from './validators';
+import { isArray, isFunction, isString } from './validators';
 
 import testPropName from './testPropertyName';
 import SubjectMeta from './SubjectMeta';
 import Virtual from './Virtual';
 import {
-  NOOP_SUBJECT, ID, ABSENT, isAbsent,
+  ABSENT, ID, isAbsent, NOOP_SUBJECT,
 } from './absent';
 import SubjectBlock from './SubjectBlock';
+import uniq from './uniq';
 
-const uniq = (list) => (isArray(list) ? list.reduce((o, item) => (o.includes(item) ? o : [...o, item]), []) : []);
 const upperFirst = (s) => (isString(s) ? (s.substr(0, 1).toUpperCase() + s.substr(1)) : '');
 
 // @TODO: namespace conflict between virtuals and properties.
@@ -54,6 +54,11 @@ export default class ValueStore {
     return this;
   }
 
+  _validPropNames(propNames) {
+    return uniq(flatten(propNames))
+      .filter((name) => (name && isString(name) && (this.streams.has(name) || this._virtuals.has(name))));
+  }
+
   /**
    *
    * returns a Subject made of a subset of virtuals and propNames
@@ -61,22 +66,33 @@ export default class ValueStore {
    * @returns {Observable<*>}
    */
   select(...propNames) {
-    const properties = uniq(flatten(propNames)
-      .filter(ID)
-      .filter(isString));
+    const properties = this._validPropNames(propNames);
 
-    const streams = properties.map((prop) => {
-      if (this.streams.has(prop)) return this.streams.get(prop).subject;
-      if (this._virtuals.has(prop)) return this._virtuals.get(prop).subject;
-      return NOOP_SUBJECT;
-    });
-    const selectStream = combineLatest(streams)
+    // eslint-disable-next-line max-len
+    const hasOpenVirtual = properties.reduce((hov, prop) => hov || (this._virtuals.has(prop) && !this._virtuals.get(prop).hasProps), false);
+    if (hasOpenVirtual) {
+      // eslint-disable-next-line max-len
+      return this.subject.pipe(map((result) => properties.reduce((out, prop) => Object.assign(out, { [prop]: result[prop] }), {})),
+        distinctUntilChanged());
+    }
+
+    const rootProperties = uniq(flatten(properties.map((prop) => {
+      if (!this._virtuals.has(prop)) return prop;
+      return this._virtuals.get(prop).propNames;
+    }))).filter(ID);
+
+    const streams = rootProperties.map((prop) => this.streams.get(prop).subject);
+    const selectStream = combineLatest(...streams)
       .pipe(
-        distinctUntilChanged(),
         map((values) => properties.reduce((out, prop, i) => {
-          out[prop] = values[i];
+          if (this._virtuals.has(prop)) {
+            out[prop] = { value: this._virtuals.get(prop).value };
+          } else {
+            out[prop] = values[i];
+          }
           return out;
         }, {})),
+        distinctUntilChanged(),
       );
 
     this.subject.subscribe(ID, ID, () => {
@@ -85,28 +101,14 @@ export default class ValueStore {
     return selectStream;
   }
 
-  selectValues(...props) {
-    const properties = uniq(flatten(props));
-    const virtuals = [];
-
-    const streams = properties.map((prop) => {
-      if (this.streams.has(prop)) return this.streams.get(prop).subject;
-      if (this._virtuals.has(prop)) {
-        virtuals.push(prop);
-      }
-      return NOOP_SUBJECT;
-    });
-    const selectStream = combineLatest(streams)
-      .pipe(
-        distinctUntilChanged(),
-        map((values) => properties.reduce((out, prop, i) => {
-          out[prop] = virtuals.includes(prop) ? this._virtuals.get(prop).value : values[i].value;
-          return out;
-        }, {})),
-      );
-
-    this.subject.subscribe(ID, ID, () => selectStream.complete());
-    return selectStream;
+  selectValues(...propNames) {
+    const properties = this._validPropNames(propNames);
+    return this.select(properties)
+      .pipe(map((result) => {
+        properties.forEach((prop) => result[prop] = result[prop].value);
+        return result;
+      }),
+      distinctUntilChanged());
   }
 
   get propNames() {
@@ -193,9 +195,15 @@ export default class ValueStore {
     this.streams.forEach((stream, name) => {
       const method = `set${upperFirst(identifier(name))}`;
       this._doSetters[method] = (value) => {
-        stream.next(value);
-        const { meta } = stream;
-        return (meta && meta.length) ? meta : false;
+        try {
+          stream.next(value);
+          const { meta } = stream;
+          return (meta && meta.length) ? meta : false;
+        } catch (error) {
+          throw Object.assign(error, {
+            value, meta: stream.getMeta(value),
+          });
+        }
       };
     });
   }

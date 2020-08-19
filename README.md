@@ -379,8 +379,8 @@ const toUpper = (s) => {
   if (!(typeof s === 'string')) return '';
   return _.upperFirst(s);
 };
-store.preProcess('lastName', toUpper);
-store.preProcess('firstName', toUpper);
+store.filter('lastName');
+store.filter('firstName');
 
 store.subscribeValue((v) => console.log(v));
 
