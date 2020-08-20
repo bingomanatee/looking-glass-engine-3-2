@@ -12,7 +12,7 @@ of desired values rather than blocking/throwing on validation errors.
 ### ValueStore
 
 A ValueStore instance is a tree of values; it operates as a dictionary of streams, 
-one per value -- SubjectMeta instances.  These work like fields in a Redux object. 
+one per value -- Stream instances.  These work like fields in a Redux object. 
 
 Additionally, there are virtuals that passively recalculate derived values. 
 
@@ -25,12 +25,12 @@ two or more changes into a single update using the block(fn) method.
 
 You can track changes in a subset of fields using the select method. 
 
-## SubjectMeta
+## Stream
 
-SubjectMeta is intended to stream a single field value. It has meta/filters that reflect 
+Stream is intended to stream a single field value. It has meta/filters that reflect 
 whether a value passes tests such as type safety, range, etc. 
 
-SubjectMeta expresses an object with three values:
+Stream expresses an object with three values:
 
 * value (variant)
 * meta (array) an array of message objects; 
@@ -40,7 +40,7 @@ SubjectMeta expresses an object with three values:
 # ValueStore API
 
 A ValueStore instance is a tree of values; it operates as a dictionary of streams, 
-one per value -- SubjectMeta instances.  These work like fields in a Redux object. 
+one per value -- Stream instances.  These work like fields in a Redux object. 
 
 Additionally, there are virtuals that passively recalculate derived values. 
 
@@ -477,7 +477,7 @@ properties/streams are stored internally as a Javascript Map.
 `props` coerces them into an object. 
 ## streams
 * `.streams: {Map}` (readonly)
-the SubjectMeta instances created from the properties defined in the constructor 
+the Stream instances created from the properties defined in the constructor 
 or with the `.property(...)` method
 ## subject
 * `.subject: {BehaviorSubject}`

@@ -3,10 +3,12 @@ import { distinctUntilChanged, filter, map } from 'rxjs/operators';
 import { identifier } from 'safe-identifier';
 import { proppify } from '@wonderlandlabs/propper';
 import flatten from './flatten';
-import { isArray, isFunction, isString } from './validators';
+import {
+  isArray, isFunction, isString, isObject,
+} from './validators';
 
 import testPropName from './testPropertyName';
-import SubjectMeta from './SubjectMeta';
+import Stream from './Stream';
 import Virtual from './Virtual';
 import {
   ABSENT, ID, isAbsent, NOOP_SUBJECT,
@@ -47,8 +49,8 @@ export default class ValueStore {
         value, lastValid, meta,
       };
     });
-    this._virtuals.forEach(({ value }, virtual) => {
-      out[virtual] = value;
+    this._virtuals.forEach((v, virtual) => {
+      out[virtual] = v.value;
     });
     this._subject.next(out);
     return this;
@@ -98,7 +100,9 @@ export default class ValueStore {
     this.subject.subscribe(ID, ID, () => {
       selectStream.complete();
     });
-    return selectStream;
+    return combineLatest(this._blockStream, selectStream)
+      .pipe(filter(([block]) => !block),
+        map(([_, value]) => value));
   }
 
   selectValues(...propNames) {
@@ -298,6 +302,31 @@ export default class ValueStore {
     return sub;
   }
 
+  next(obj) {
+    if (!(obj && isObject(obj))) {
+      throw new Error('next requires object');
+    }
+
+    const [error] = this.block(() => {
+      // do a dry run - break on unacceptable values
+      Object.keys(obj).forEach((key) => {
+        if (this.streams.has(key)) {
+          const value = obj[key];
+          if (!this.streams.get(key).accepts(value)) {
+            throw Object.assign(new Error(`${key} cannot accept this value`), { key, value, source: obj });
+          }
+        }
+      });
+      // then if no throw, actually set the values;
+      Object.keys(obj).forEach((key) => {
+        if (this.streams.has(key)) {
+          this.stream.next(obj[key]);
+        }
+      });
+    });
+    if (error) throw error;
+  }
+
   get subjectValue() {
     if (!this._subjectValue) {
       this._subjectValue = this.subject.pipe(
@@ -329,7 +358,7 @@ export default class ValueStore {
       throw new Error(`cannot redefine ${name}`);
     }
 
-    const stream = new SubjectMeta(value, filters);
+    const stream = new Stream(value, filters);
     stream.store = this;
     stream.name = name;
     stream.subject.subscribe((value) => this._changeStream.next({

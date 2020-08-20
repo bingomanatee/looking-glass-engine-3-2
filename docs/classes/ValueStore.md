@@ -1,7 +1,7 @@
 # ValueStore
 
 A ValueStore instance is a tree of values; it operates as a dictionary of streams, 
-one per value -- SubjectMeta instances.  These work like fields in a Redux object. 
+one per value -- Stream instances.  These work like fields in a Redux object. 
 
 Additionally, there are virtuals that passively recalculate derived values. 
 
@@ -451,7 +451,7 @@ properties/streams are stored internally as a Javascript Map.
 `props` coerces them into an object. 
 ## streams
 * `.streams: {Map}` (readonly)
-the SubjectMeta instances created from the properties defined in the constructor 
+the Stream instances created from the properties defined in the constructor 
 or with the `.property(...)` method
 ## subject
 * `.subject: {BehaviorSubject}`

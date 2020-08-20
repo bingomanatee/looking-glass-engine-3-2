@@ -8,7 +8,7 @@ import Meta from './Meta';
 import val, {
   isArray, isMap, isFunction, isNumber, isObject, isSet, isString,
 } from './validators';
-import { ID } from './absent';
+import { ID, ABSENT, isAbsent } from './absent';
 
 const PREPROCESSORS = {
   array: (value) => (value && isArray(value) ? [...value] : []),
@@ -33,7 +33,7 @@ const PREPROCESSORS = {
  * note - the heavy lifting for filters is done by _metaList. This class instance of MetaList
  * is omitted if there are no filters.
  */
-export default class SubjectMeta {
+export default class Stream {
   constructor(initialValue = null, meta) {
     this._initBase(initialValue);
     this._initMeta(initialValue, meta);
@@ -44,9 +44,8 @@ export default class SubjectMeta {
     return this.getMeta(this.value);
   }
 
-  preProcess(filter) {
-    this._prep = false;
-    const processor = filter || this._metaList.type;
+  preProcess(filter = ABSENT) {
+    const processor = isAbsent(filter) ? this._metaList.type : filter;
 
     if (processor) {
       if (isString(processor)) {
@@ -54,6 +53,8 @@ export default class SubjectMeta {
       } else if (isFunction(processor)) {
         this._prep = processor;
       }
+    } else {
+      this._prep = false;
     }
 
     return this;
@@ -146,8 +147,21 @@ export default class SubjectMeta {
     this._subject.subscribe(...methods);
   }
 
+  prepped(value){
+    return this._prep ? this._prep(value, this.getMeta(value), this) : value;
+  }
+
+  accepts(value) {
+    try {
+      this.prepped(value);
+      return true;
+    } catch (err) {
+      return false;
+    }
+  }
+
   next(value) {
-    const nextValue = this._prep ? this._prep(value, this.getMeta(value), this) : value;
+    const nextValue = this.prepped(value);
     this._base.next(nextValue);
   }
 

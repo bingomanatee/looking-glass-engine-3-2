@@ -3,7 +3,7 @@
 const tap = require('tap');
 const p = require('../package.json');
 
-const {SubjectMeta } = require('../lib');
+const { Stream } = require('../lib');
 
 /**
  *  testing basic name, value, deserialization
@@ -12,7 +12,7 @@ const {SubjectMeta } = require('../lib');
 
 tap.test(p.name, (suite) => {
   suite.test('no meta', (noMeta) => {
-    const count = new SubjectMeta(1);
+    const count = new Stream(1);
 
     const latest = { value: null, meta: null, lastValid: null };
 
@@ -49,7 +49,7 @@ tap.test(p.name, (suite) => {
   });
 
   suite.test('meta (validator/string)', (metaString) => {
-    const count = new SubjectMeta(0, 'number');
+    const count = new Stream(0, 'number');
 
     const latest = { value: null, meta: null, lastValid: null };
     count.subscribe((output) => {
