@@ -325,7 +325,7 @@ a re-notification to all subscribers of the stores' current state.
 
 Terminates the subject, and freezes all further subscription notifications. 
 
-## preProcess
+## pre
 * `.preProcess(name, fn)`
 Adds a function to a named stream that returns an altered version of the input 
 every time a stream is set. 
@@ -352,45 +352,13 @@ store.do.setLastName('roberts');
 store.do.setFirstName('bob');
 // {firstName: 'Bob', lastName: 'Roberts'}
 ```
-* `.preProcess(name)`
 
-returns unique/shallow copies of input, based on the type. Arrays/objects are destructured; 
-Maps and Sets are cloned; numbers and functions are replaced with standin values if the input
-is an improper type. 
+## stream
+* `.stream(name, value)`
+* `.stream('name, value, pre?, post? comparator?)`
+*alias: property* for backwards compatibility
+creates a stream 
 
-This is only currently value for a limited number of types: 
-
-* array
-* object
-* string
-* number
-* map
-* set 
-
-* `.preProcess()`
-
-causes all the properties currently defined to preprocess their values based on type. 
-
-## prop
-* `.prop(name, value)`
-* `.prop('name, value, filter)`
-* `.prop('name, value, filter, filter...)`
-
-Defines a property on a store instance. filters can be: 
-
-**a string: name of a common type:**
-* string
-* number
-* array
-* map
-* set
-* object
-
-**a function that returns a string on an error condition**
-note - in this scenario false indicates a *good* value - a string indicates a failure of some sort.
-```
-store.prop('count', 0, 'number', (a) => (a >= 0 ? false : 'must be > 0'))
-```
 # select
 * `.select(propName:string, propName: string...) : Subject`
 returns a stream that observes changes in a subset of the stores' properties. 

@@ -4,14 +4,14 @@ import { identifier } from 'safe-identifier';
 import { proppify } from '@wonderlandlabs/propper';
 import flatten from './flatten';
 import {
-  isArray, isFunction, isString, isObject,
+  isArray, isString, isObject,
 } from './validators';
 
 import testPropName from './testPropertyName';
 import Stream from './Stream';
 import Virtual from './Virtual';
 import {
-  ABSENT, ID, isAbsent, NOOP_SUBJECT,
+  ABSENT, ID, isAbsent,
 } from './absent';
 import SubjectBlock from './SubjectBlock';
 import uniq from './uniq';
@@ -32,33 +32,43 @@ export default class ValueStore {
   }
 
   _listenForChange() {
-    combineLatest(this._blockStream, this._changeStream)
+    combineLatest(this._blockStream, this._changeSubject)
       .pipe(
         filter(([block]) => !block),
-      ).subscribe((change) => this.broadcast(change));
+        // eslint-disable-next-line no-unused-vars
+      ).subscribe(([_, change]) => this.broadcast(change));
   }
 
   /**
    * triggers a data update to all subscribers
    * @returns {ValueStore}
    */
-  broadcast() {
-    const out = {};
-    this.streams.forEach(({ value, lastValid, meta }, prop) => {
-      out[prop] = {
-        value, lastValid, meta,
-      };
-    });
+  broadcast(change) {
+    if (!change || !this._memo) {
+      this._memo = this.value;
+    } else {
+      const { name, value } = change;
+      this._memo[name] = value;
+    }
+
     this._virtuals.forEach((v, virtual) => {
-      out[virtual] = v.value;
+      this._memo[virtual] = v.value;
     });
-    this._subject.next(out);
-    return this;
+    this._subject.next({ ...this._memo });
   }
 
   _validPropNames(propNames) {
     return uniq(flatten(propNames))
       .filter((name) => (name && isString(name) && (this.streams.has(name) || this._virtuals.has(name))));
+  }
+
+  _subjectBruteForce(...propNames) {
+    const { all } = this._qualfiyProps(propNames);
+    return this.subject.pipe(map((result) => all.reduce((out, prop) => {
+      out[prop] = result[prop];
+      return out;
+    }, {})),
+    distinctUntilChanged());
   }
 
   /**
@@ -68,32 +78,28 @@ export default class ValueStore {
    * @returns {Observable<*>}
    */
   select(...propNames) {
-    const properties = this._validPropNames(propNames);
+    const {
+      virtuals, streams, expanded,
+    } = this._qualifyStreamNames(propNames);
 
-    // eslint-disable-next-line max-len
-    const hasOpenVirtual = properties.reduce((hov, prop) => hov || (this._virtuals.has(prop) && !this._virtuals.get(prop).hasProps), false);
-    if (hasOpenVirtual) {
+    if (this._hasOpenVirtual(virtuals)) {
       // eslint-disable-next-line max-len
-      return this.subject.pipe(map((result) => properties.reduce((out, prop) => Object.assign(out, { [prop]: result[prop] }), {})),
-        distinctUntilChanged());
+      return this._subjectBruteForce(...propNames);
     }
 
-    const rootProperties = uniq(flatten(properties.map((prop) => {
-      if (!this._virtuals.has(prop)) return prop;
-      return this._virtuals.get(prop).propNames;
-    }))).filter(ID);
-
-    const streams = rootProperties.map((prop) => this.streams.get(prop).subject);
-    const selectStream = combineLatest(...streams)
+    const metaStream = expanded.map((prop) => this.streams.get(prop).subject);
+    const selectStream = combineLatest(...metaStream)
       .pipe(
-        map((values) => properties.reduce((out, prop, i) => {
-          if (this._virtuals.has(prop)) {
-            out[prop] = { value: this._virtuals.get(prop).value };
-          } else {
-            out[prop] = values[i];
-          }
-          return out;
-        }, {})),
+        map((metaData) => {
+          const returned = {};
+          streams.forEach((name) => {
+            returned[name] = metaData[name];
+          });
+          virtuals.forEach((name) => {
+            returned[name] = this._virtuals.get(name).value;
+          });
+          return returned;
+        }),
         distinctUntilChanged(),
       );
 
@@ -102,36 +108,112 @@ export default class ValueStore {
     });
     return combineLatest(this._blockStream, selectStream)
       .pipe(filter(([block]) => !block),
+        // eslint-disable-next-line no-unused-vars
         map(([_, value]) => value));
   }
 
-  selectValues(...propNames) {
-    const properties = this._validPropNames(propNames);
-    return this.select(properties)
-      .pipe(map((result) => {
-        properties.forEach((prop) => result[prop] = result[prop].value);
-        return result;
-      }),
-      distinctUntilChanged());
+  _qualifyStreamNamesBasic(...propNames) {
+    return uniq(flatten(propNames))
+      .reduce((out, name) => {
+        let valid = false;
+        if (this.streams.has(name)) {
+          out.streams.push(name);
+          valid = true;
+        } else if (this._virtuals.has(name)) {
+          out.virtuals.push(name);
+          valid = true;
+        }
+        if (valid) {
+          out.all.push(name);
+        }
+        return out;
+      }, { streams: [], virtuals: [], all: [] });
+  }
+
+  _qualifyStreamNames(...propNames) {
+    const props = this._qualifyStreamNamesBasic(propNames);
+
+    // eslint-disable-next-line max-len
+    props.expanded = uniq(flatten(
+      props.virtuals.reduce((expanded, name) => [...expanded,
+        ...this._virtuals.get(name).propNames],
+      [...props.streams]),
+    ));
+
+    return props;
+  }
+
+  _subjectMetaBruteForce(...propNames) {
+    const { all, virtuals } = this._validPropNames(propNames);
+    return this.subjectMeta.pipe(map((result) => all.reduce((out, prop) => {
+      out[prop] = result[prop];
+      if (virtuals.includes(prop)) {
+        out[prop] = { value: this._virtuals.get(prop).value, errors: [], notes: [] };
+      }
+      return out;
+    }, {})),
+    distinctUntilChanged());
+  }
+
+  _hasOpenVirtual(virtuals) {
+    return virtuals.reduce((hov, prop) => hov || !this._virtuals.get(prop).hasProps, false);
+  }
+
+  selectMeta(...propNames) {
+    const {
+      virtuals, streams, expanded,
+    } = this._validPropNames(propNames);
+
+    if (this._hasOpenVirtual(virtuals)) {
+      // eslint-disable-next-line max-len
+      return this._subjectMetaBruteForce(...propNames);
+    }
+
+    const metaStream = expanded.map((prop) => this.streams.get(prop).metaSubject);
+    const selectStream = combineLatest(metaStream)
+      .pipe(
+        map((metaData) => {
+          Object.keys(metaData).forEach((name) => {
+            if (!streams.includes(name)) {
+              delete metaData[name];
+            }
+          });
+          virtuals.forEach((name) => {
+            metaData[name] = this._virtuals.get(name).meta;
+          });
+          return metaData;
+        }),
+        distinctUntilChanged(),
+      );
+
+    this.subject.subscribe(ID, ID, () => {
+      selectStream.complete();
+    });
+    return combineLatest(this._blockStream, selectStream)
+      .pipe(filter(([block]) => !block),
+        // eslint-disable-next-line no-unused-vars
+        map(([_, value]) => value));
   }
 
   get propNames() {
     return Array.from(this.streams.keys());
   }
 
-  preProcess(name, fn) {
-    if (!name) {
-      this.propNames.forEach((n) => this.preProcess(n));
-      return this;
+  pre(name, pre) {
+    if (isArray(name)) {
+      name.forEach((n) => this.pre(n, pre));
+    } else if (this.streams.has(name)) {
+      this.streams.get(name).pre(pre);
     }
-    if (isFunction(name)) {
-      fn = name;
-      name = this.propNames.pop();
+    return this;
+  }
+
+  post(name, post) {
+    if (isArray(name)) {
+      name.forEach((n) => this.post(n, post));
+    } else if (this.streams.has(name)) {
+      this.streams.get(name).post(post);
     }
-    if (!this.streams.has(name)) {
-      throw new Error(`preProcess cannot find prop ${name}`);
-    }
-    this.streams.get(name).preProcess(fn);
     return this;
   }
 
@@ -166,9 +248,9 @@ export default class ValueStore {
     Object.keys(obj).forEach((key) => {
       const stream = obj[key];
       if (isArray(stream)) {
-        this._makeProp(key, ...stream);
+        this._makeStream(key, ...stream);
       } else {
-        this._makeProp(key, stream);
+        this._makeStream(key, stream);
       }
     });
 
@@ -284,6 +366,13 @@ export default class ValueStore {
     return out;
   }
 
+  get metaValue() {
+    const metaData = {};
+    this.streams.forEach((stream, name) => metaData[name] = stream.meta);
+    this._virtuals.forEach((virtual, name) => metaData[name] = virtual.meta);
+    return metaData;
+  }
+
   values(...props) {
     return uniq(flatten(props)).reduce((out, prop) => {
       if (this.streams.has(prop)) out[prop] = this.streams.get(prop).value;
@@ -294,6 +383,12 @@ export default class ValueStore {
 
   get subject() {
     return this._subject;
+  }
+
+  get metaSubject() {
+    return this.subject.pipe(
+      map(() => this.metaValues),
+    );
   }
 
   subscribe(...listeners) {
@@ -351,21 +446,15 @@ export default class ValueStore {
     this._closeSets();
   }
 
-  _makeProp(name, value, ...filters) {
-    this._propsAsObject = null;
+  _makeStream(name, value, ...params) {
+    this.__propsToValue = null;
     testPropName(name);
     if (this.streams.has(name)) {
       throw new Error(`cannot redefine ${name}`);
     }
 
-    const stream = new Stream(value, filters);
-    stream.store = this;
-    stream.name = name;
-    stream.subject.subscribe((value) => this._changeStream.next({
-      value,
-      stream: name,
-    }));
-
+    const stream = new Stream(this, name, value, ...params);
+    stream.metaSubject.subscribe(this._changeStream.next.bind(this._changeStream));
     this.streams.set(name, stream);
   }
 
@@ -373,7 +462,7 @@ export default class ValueStore {
     if (this._propProxy) {
       return this._propProxy;
     }
-    return this._propsAsObject();
+    return this._streamsAsObject();
   }
 
   get _propProxy() {
@@ -392,7 +481,12 @@ export default class ValueStore {
     return out;
   }
 
-  _propsAsObject() {
+  /**
+   * transform streams into an object from its orignal store, a map
+   * @returns {{}}
+   * @private
+   */
+  _streamsAsObject() {
     if (!this.__propsToValue) {
       this.__propsToValue = {};
       this.streams.forEach((stream, name) => {
@@ -402,13 +496,13 @@ export default class ValueStore {
     return this.__propsToValue;
   }
 
-  prop(name, value, ...filters) {
-    this._makeProp(name, value, ...filters);
+  stream(name, value, ...filters) {
+    this._makeStream(name, value, ...filters);
     this._updateStream();
     return this;
   }
 
-  property(...args) { return this.prop(...args); }
+  property(...args) { return this.stream(...args); }
 
   /**
    * executes a function, interrupting all the updates until it is done.

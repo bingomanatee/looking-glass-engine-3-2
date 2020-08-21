@@ -1,24 +1,20 @@
 import {
   map,
   distinctUntilChanged,
+  switchMap,
+  catchError,
+  filter,
 } from 'rxjs/operators';
-import { BehaviorSubject } from 'rxjs';
-import MetaList from './MetaList';
-import Meta from './Meta';
+import {
+  BehaviorSubject, Subject, of, combineLatest,
+} from 'rxjs';
+import { proppify } from '@wonderlandlabs/propper';
+
 import val, {
-  isArray, isMap, isFunction, isNumber, isObject, isSet, isString,
+  isFunction, isObject, isArray,
 } from './validators';
 import { ID, ABSENT, isAbsent } from './absent';
-
-const PREPROCESSORS = {
-  array: (value) => (value && isArray(value) ? [...value] : []),
-  object: (value) => (value && isObject(value) ? { ...value } : {}),
-  string: (value) => ((isString(value)) ? value : ''),
-  number: (value) => (isNumber(value) ? value : 0),
-  map: (value) => (isMap(value) ? new Map(value) : new Map()),
-  set: (value) => ((isSet(value)) ? new Set(value) : new Set()),
-  function: (value) => (isFunction(value) ? value : ID),
-};
+import Change from './Change';
 
 /**
  * This decorates and expands a value (standard) Subject
@@ -29,96 +25,112 @@ const PREPROCESSORS = {
  *
  * it can optionally have a preprocessing filter that sanitizes values before they are
  * expressed as the next value, to for instance destructure arrays & objects into new references;
- *
- * note - the heavy lifting for filters is done by _metaList. This class instance of MetaList
- * is omitted if there are no filters.
  */
+
 export default class Stream {
-  constructor(initialValue = null, meta) {
-    this._initBase(initialValue);
-    this._initMeta(initialValue, meta);
-    this._initSubject();
-  }
-
-  get meta() {
-    return this.getMeta(this.value);
-  }
-
-  preProcess(filter = ABSENT) {
-    const processor = isAbsent(filter) ? this._metaList.type : filter;
-
-    if (processor) {
-      if (isString(processor)) {
-        this._prep = PREPROCESSORS[processor];
-      } else if (isFunction(processor)) {
-        this._prep = processor;
-      }
-    } else {
-      this._prep = false;
-    }
-
-    return this;
-  }
-
-  _initMeta(initialValue, filters) {
-    this.lastValid = initialValue;
-    if (!MetaList.hasMetas(filters)) {
-      this._metaList = null;
-      return;
-    }
-    this._metaList = new MetaList(filters);
-    if (MetaList.errors(this.getMeta(initialValue))) {
-      this.lastValid = undefined;
-    }
-  }
-
-  getMeta(value) {
-    return (this._metaList) ? this._metaList.getMeta(value, this) : [];
-  }
-
-  _initSubject() {
-    this._subject = this._base.pipe(
-      distinctUntilChanged(this._compare.bind(this)),
-      map((value) => {
-        const meta = this.getMeta(value);
-        if (!MetaList.errors(meta)) {
-          this.lastValid = value;
-        }
-        return Object.assign([value, meta], { value, meta, lastValid: this.lastValid });
-      }),
-    );
-  }
-
-  _compare(a, b) {
-    return this.__forceUpdate ? false : a === b;
-  }
-
-  get value() {
-    return this._value;
-  }
-
-  _initBase(initialValue) {
+  /**
+   * @param store {ValueStore}
+   * @param name {String}
+   * @param initialValue any
+   * @param pre {function | falsy} an optional function to pre-transform input
+   * @param post {function | falsy} an optional function to note errors / annotation of value
+   * @param comparator {function | false | null} an optional function to determine uniqueness
+   */
+  constructor(store, name, initialValue = null, pre = null, post = null, comparator = null) {
     this._value = initialValue;
-    this._base = new BehaviorSubject(initialValue);
-    this._base.subscribe((v) => {
-      this._value = v;
+    this.store = store;
+    this.name = name;
+    if (isObject(pre)) {
+      const {
+        pre: oPre, post: oPost, comparator: oComp,
+      } = pre;
+      this._pre = oPre;
+      this._post = oPost;
+      this._comparator = oComp;
+    } else {
+      this._pre = pre;
+      this._post = post;
+      this._comparator = comparator;
+    }
+    this._initSubject(initialValue);
+    this._initialized = true;
+  }
+
+  _initSubject(initialValue) {
+    this._subject = new BehaviorSubject(initialValue)
+      .pipe(distinctUntilChanged((...args) => this._compare(...args)));
+
+    this._subject.subscribe(value => this._value = value);
+  }
+
+  reset() {
+    this.errors = [];
+    this.thrown = [];
+    this.notes = null;
+  }
+
+  _initChangeSubject() {
+    this._changeSubject = new Subject()
+      .pipe(
+        switchMap(
+          (newValue) => of(newValue)
+            .pipe(
+              map((value) => {
+                const change = new Change(this, value);
+                change.pre();
+                return change;
+              }),
+              catchError(() => of(ABSENT)),
+            ),
+        ),
+        switchMap(
+          (newValue) => of(newValue)
+            .pipe(
+              map((change) => {
+                change.post();
+                return change;
+              }),
+              catchError(() => of(ABSENT)),
+            ),
+        ),
+        filter((change) => !isAbsent(change)),
+      );
+    this._changeSubject.subscribe((change) => {
+      if (!change.thrown.length) this._subject.next(change.nextValue);
     });
   }
 
-  addMeta(...params) {
-    const meta = new Meta(...params);
-    if (!this._metaList) {
-      this._metaList = new MetaList(meta);
-    } else {
-      this._metaList.add(meta);
+  get changeSubject() {
+    if (!this._changeSubject) {
+      this._initChangeSubject();
     }
-    this.force();
+    return this._changeSubject;
+  }
+
+  pre(fn) {
+    this._pre = fn;
+    if (this._initialized) this.force();
+  }
+
+  post(fn) {
+    this._post = fn;
+    if (this._initialized) this.force();
   }
 
   force() {
     this.__forceUpdate = true;
     this.next(this.value);
-    this.__forceUpdate = false;
+  }
+
+  _compare(a, b) {
+    if (this.__forceUpdate || (this._comparator === false)) return false;
+    if (isFunction(this._comparator)) return this._comparator(a, b);
+    return a === b;
+  }
+
+  comparator(f) {
+    this._comparator = f;
+    return this;
   }
 
   /**
@@ -144,16 +156,12 @@ export default class Stream {
   }
 
   subscribe(...methods) {
-    this._subject.subscribe(...methods);
-  }
-
-  prepped(value){
-    return this._prep ? this._prep(value, this.getMeta(value), this) : value;
+    this.subject.subscribe(...methods);
   }
 
   accepts(value) {
     try {
-      this.prepped(value);
+      this.getPost(value);
       return true;
     } catch (err) {
       return false;
@@ -161,11 +169,51 @@ export default class Stream {
   }
 
   next(value) {
-    const nextValue = this.prepped(value);
-    this._base.next(nextValue);
+    this.changeSubject.next(value);
   }
 
   complete() {
-    this._base.complete();
+    this._subject.complete();
+    if (this._changeSubject) this._changeSubject.complete();
+  }
+
+  get value() {
+    return this._value;
+  }
+
+  getPre(value) {
+    if (isFunction(this._pre)) return this._pre(value);
+    return value;
+  }
+
+  getPost(value) {
+    const meta = {
+      errors: [], notes: null,
+    };
+    if (isFunction(this._post)) {
+      const post = this._post(value);
+      if (post && isObject(post)) {
+        if (isArray(post)) {
+          meta.errors = post;
+        } else Object.assign(meta, post);
+      }
+    }
+    return meta;
+  }
+
+  get meta() {
+    return {
+      value: this.value,
+      errors: [...this.errors],
+      notes: this.notes,
+      hasErrors: this.errors.length,
+    };
   }
 }
+
+proppify(Stream)
+  .addProp('errors', () => ([]), 'array')
+  .addProp('thrown', () => ([]), 'array')
+  .addProp('_comparator', null)
+  .addProp('type', '', 'string')
+  .addProp('notes', null);

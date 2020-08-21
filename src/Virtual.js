@@ -1,5 +1,3 @@
-import { distinctUntilChanged } from 'rxjs/operators';
-import { BehaviorSubject } from 'rxjs';
 import flatten from './flatten';
 import { ID } from './absent';
 
@@ -17,5 +15,13 @@ export default class Virtual {
 
   get hasProps() {
     return !!this.propNames.length;
+  }
+
+  meta() {
+    try {
+      return { value: this.value, errors: [], notes: [] };
+    } catch (err) {
+      return { value: undefined, errors: [err], notes: [] };
+    }
   }
 }
