@@ -24,11 +24,11 @@ tap.test(p.name, (suite) => {
     const block2 = b.block();
     sb.same(blocks, [0, 1, 2]);
 
-    block.done();
+    block.complete();
     sb.same(blocks, [0, 1, 2, 1]);
-    block.done(); // redundant - should not emit
+    block.complete(); // redundant - should not emit
     sb.same(blocks, [0, 1, 2, 1]);
-    block2.done();
+    block2.complete();
     sb.same(blocks, [0, 1, 2, 1, 0]);
 
     sb.end();

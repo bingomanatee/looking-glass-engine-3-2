@@ -1,20 +1,18 @@
 import { BehaviorSubject, combineLatest, Subject } from 'rxjs';
 import { distinctUntilChanged, filter, map } from 'rxjs/operators';
-import { identifier } from 'safe-identifier';
 import { proppify } from '@wonderlandlabs/propper';
 import flatten from './flatten';
 import {
-  isArray, isString, isObject,
+  isArray, isFunction, isObject, isString,
 } from './validators';
 
 import testPropName from './testPropertyName';
 import Stream from './Stream';
-import Virtual from './Virtual';
-import {
-  ABSENT, ID, isAbsent,
-} from './absent';
+import { ABSENT, ID, isAbsent } from './absent';
 import SubjectBlock from './SubjectBlock';
 import uniq from './uniq';
+import pick from './pick';
+import goodName from './goodName';
 
 const upperFirst = (s) => (isString(s) ? (s.substr(0, 1).toUpperCase() + s.substr(1)) : '');
 
@@ -23,52 +21,75 @@ const upperFirst = (s) => (isString(s) ? (s.substr(0, 1).toUpperCase() + s.subst
 export default class ValueStore {
   constructor(initial = {}, actions = {}, virtuals = {}) {
     this.subject.subscribe(ID, ID, () => this._closeSets());
-    this._initStreams(initial);
-    this._initActions(actions);
-    this._initVirtuals(virtuals);
+    this.addStreams(initial);
+    this.addActions(actions);
+    this.addVirtuals(virtuals);
     this._listenForChange();
     this._initialized = true;
     this.broadcast();
   }
 
+  get _subject() {
+    if (!this.__subject) {
+      this.__subject = new BehaviorSubject(this.value);
+    }
+    return this.__subject;
+  }
+
+  get virtualStreams() {
+    const streams = [];
+    this.streams.forEach((stream) => {
+      if (stream.virtual) {
+        streams.push(stream);
+      }
+    });
+
+    return streams;
+  }
+
   _listenForChange() {
     combineLatest(this._blockStream, this._changeSubject)
       .pipe(
-        filter(([block]) => !block),
+        filter(([block, change]) => {
+          if (block) {
+            return false;
+          }
+          if (change.thrown && change.thrown.length) {
+            return false;
+          }
+          return true;
+        }),
+        map((_, change) => change),
         // eslint-disable-next-line no-unused-vars
-      ).subscribe(([_, change]) => this.broadcast(change));
+      ).subscribe((change) => this.broadcast(change));
   }
 
   /**
    * triggers a data update to all subscribers
-   * @returns {ValueStore}
    */
   broadcast(change) {
-    if (!change || !this._memo) {
-      this._memo = this.value;
-    } else {
-      const { name, value } = change;
-      this._memo[name] = value;
+    let block = null;
+    if (change && change.thrown && change.thrown.length) {
+      return;
     }
-
-    this._virtuals.forEach((v, virtual) => {
-      this._memo[virtual] = v.value;
+    this.virtualStreams.forEach((virtual) => {
+      if (virtual.virtualSubjects.includes(change.name)) {
+        if (!block) {
+          block = this._block.block();
+        }
+        block.add(() => virtual.next());
+      }
     });
-    this._subject.next({ ...this._memo });
+
+    if (block) {
+      block.complete();
+    }
+    this.subject.next(this.value);
   }
 
-  _validPropNames(propNames) {
+  _validStreamNames(propNames) {
     return uniq(flatten(propNames))
-      .filter((name) => (name && isString(name) && (this.streams.has(name) || this._virtuals.has(name))));
-  }
-
-  _subjectBruteForce(...propNames) {
-    const { all } = this._qualfiyProps(propNames);
-    return this.subject.pipe(map((result) => all.reduce((out, prop) => {
-      out[prop] = result[prop];
-      return out;
-    }, {})),
-    distinctUntilChanged());
+      .filter((name) => (name && isString(name) && (this.streams.has(name))));
   }
 
   /**
@@ -78,29 +99,22 @@ export default class ValueStore {
    * @returns {Observable<*>}
    */
   select(...propNames) {
-    const {
-      virtuals, streams, expanded,
-    } = this._qualifyStreamNames(propNames);
+    const methods = this._validStreamNames(propNames);
 
-    if (this._hasOpenVirtual(virtuals)) {
-      // eslint-disable-next-line max-len
-      return this._subjectBruteForce(...propNames);
+    if (!methods.length) {
+      throw new Error('select requires at least one method');
     }
 
-    const metaStream = expanded.map((prop) => this.streams.get(prop).subject);
-    const selectStream = combineLatest(...metaStream)
+    const streamSubjects = methods.map((prop) => this.streams.get(prop).subject);
+    const selectStream = combineLatest(...streamSubjects)
       .pipe(
-        map((metaData) => {
+        map((values) => {
           const returned = {};
-          streams.forEach((name) => {
-            returned[name] = metaData[name];
-          });
-          virtuals.forEach((name) => {
-            returned[name] = this._virtuals.get(name).value;
+          methods.forEach((name) => {
+            returned[name] = values[name];
           });
           return returned;
         }),
-        distinctUntilChanged(),
       );
 
     this.subject.subscribe(ID, ID, () => {
@@ -112,87 +126,15 @@ export default class ValueStore {
         map(([_, value]) => value));
   }
 
-  _qualifyStreamNamesBasic(...propNames) {
-    return uniq(flatten(propNames))
-      .reduce((out, name) => {
-        let valid = false;
-        if (this.streams.has(name)) {
-          out.streams.push(name);
-          valid = true;
-        } else if (this._virtuals.has(name)) {
-          out.virtuals.push(name);
-          valid = true;
-        }
-        if (valid) {
-          out.all.push(name);
-        }
-        return out;
-      }, { streams: [], virtuals: [], all: [] });
-  }
-
-  _qualifyStreamNames(...propNames) {
-    const props = this._qualifyStreamNamesBasic(propNames);
-
-    // eslint-disable-next-line max-len
-    props.expanded = uniq(flatten(
-      props.virtuals.reduce((expanded, name) => [...expanded,
-        ...this._virtuals.get(name).propNames],
-      [...props.streams]),
-    ));
-
-    return props;
-  }
-
-  _subjectMetaBruteForce(...propNames) {
-    const { all, virtuals } = this._validPropNames(propNames);
-    return this.subjectMeta.pipe(map((result) => all.reduce((out, prop) => {
-      out[prop] = result[prop];
-      if (virtuals.includes(prop)) {
-        out[prop] = { value: this._virtuals.get(prop).value, errors: [], notes: [] };
-      }
-      return out;
-    }, {})),
-    distinctUntilChanged());
-  }
-
-  _hasOpenVirtual(virtuals) {
-    return virtuals.reduce((hov, prop) => hov || !this._virtuals.get(prop).hasProps, false);
-  }
-
-  selectMeta(...propNames) {
-    const {
-      virtuals, streams, expanded,
-    } = this._validPropNames(propNames);
-
-    if (this._hasOpenVirtual(virtuals)) {
-      // eslint-disable-next-line max-len
-      return this._subjectMetaBruteForce(...propNames);
+  selectChanges(...propNames) {
+    const methods = this._validStreamNames(propNames);
+    if (!methods.length) {
+      throw new Error('select requires at least one method');
     }
 
-    const metaStream = expanded.map((prop) => this.streams.get(prop).metaSubject);
-    const selectStream = combineLatest(metaStream)
-      .pipe(
-        map((metaData) => {
-          Object.keys(metaData).forEach((name) => {
-            if (!streams.includes(name)) {
-              delete metaData[name];
-            }
-          });
-          virtuals.forEach((name) => {
-            metaData[name] = this._virtuals.get(name).meta;
-          });
-          return metaData;
-        }),
-        distinctUntilChanged(),
-      );
-
-    this.subject.subscribe(ID, ID, () => {
-      selectStream.complete();
-    });
-    return combineLatest(this._blockStream, selectStream)
-      .pipe(filter(([block]) => !block),
-        // eslint-disable-next-line no-unused-vars
-        map(([_, value]) => value));
+    return this.changeSubject.pipe(
+      filter((change) => methods.includes(change.name)),
+    );
   }
 
   get propNames() {
@@ -204,6 +146,8 @@ export default class ValueStore {
       name.forEach((n) => this.pre(n, pre));
     } else if (this.streams.has(name)) {
       this.streams.get(name).pre(pre);
+    } else {
+      console.log('attempt to assign pre function ', pre, 'to unknown stream ', name);
     }
     return this;
   }
@@ -213,57 +157,68 @@ export default class ValueStore {
       name.forEach((n) => this.post(n, post));
     } else if (this.streams.has(name)) {
       this.streams.get(name).post(post);
+    } else {
+      console.log('attempt to assign pre function ', post, 'to unknown stream ', name);
     }
     return this;
   }
 
-  _initVirtuals(obj) {
+  addVirtuals(obj) {
     Object.keys(obj).forEach((method) => {
       this.virtual(method, ...flatten([obj[method]]));
     });
   }
 
-  _initActions(obj) {
+  addActions(obj) {
     Object.keys(obj).forEach((method) => {
       this.action(method, obj[method]);
     });
+    if (this._initialized) this._redo();
     return this;
   }
 
   action(name, fn) {
-    const method = identifier(name);
-    if (this._actions[method]) throw new Error(`cannot redefine action ${method}`);
+    if (!goodName(name)) {
+      throw new Error(`cannot define action with name ${name}`);
+    }
+    if (this._actions[name]) {
+      throw new Error(`cannot redefine action ${name}`);
+    }
 
-    this._actions[method] = (...args) => fn(this, ...args);
+    this._actions[name] = (...args) => fn(this, ...args);
+    if (this._initialized) this._redo();
     return this;
   }
 
-  method(...args) { return this.action(...args); } // for backwards compatibility
+  method(...args) {
+    return this.action(...args);
+  } // for backwards compatibility
 
-  _initStreams(obj) {
-    if (this._relay) {
-      this._relay.unsubscribe();
-    }
-
+  addStreams(obj) {
     Object.keys(obj).forEach((key) => {
-      const stream = obj[key];
-      if (isArray(stream)) {
-        this._makeStream(key, ...stream);
+      const def = obj[key];
+      if (isArray(def) && (def.length > 1 && isFunction(def[1]))) {
+        this._makeStream(key, ...def);
       } else {
-        this._makeStream(key, stream);
+        this._makeStream(key, def);
       }
     });
 
     this._updateStream();
-    this._initialized = true;
   }
 
-  virtual(name, fn, ...props) {
-    const method = identifier(name);
-    if (this._virtuals.has(method)) {
-      throw new Error(`cannot redefine ${method}`);
+  virtual(name, fn, ...methods) {
+    if (!goodName(name)) {
+      throw new Error(`cannot make virtual: bad name: ${name}`);
     }
-    this._virtuals.set(method, new Virtual(this, fn, props));
+    if (this.subjects.has(name)) {
+      throw new Error(`cannot redefine stream with virtual: ${name}`);
+    }
+
+    const validStreamNames = this._validStreamNames(methods);
+    const virtualStream = this.makeStream(name, pick(this.value, validStreamNames), fn);
+    virtualStream.virtual = true;
+    virtualStream.virtualSubjects = validStreamNames;
     return this;
   }
 
@@ -279,9 +234,15 @@ export default class ValueStore {
   _redo() {
     this._doSetters = {};
     this.streams.forEach((stream, name) => {
-      const method = `set${upperFirst(identifier(name))}`;
+      if (stream.virtual) {
+        return;
+      }
+      const method = `set${upperFirst(name)}`;
       this._doSetters[method] = (value) => {
         try {
+          if (stream.virtual) {
+            return false;
+          }
           stream.next(value);
           const { meta } = stream;
           return (meta && meta.length) ? meta : false;
@@ -319,6 +280,13 @@ export default class ValueStore {
     return isAbsent(this.__doProxy) ? false : this.__doProxy;
   }
 
+  get do() {
+    if (this._doProxy) {
+      return this._doProxy;
+    }
+    return { ...this._actions, ...this._doSetters };
+  }
+
   get _myHandler() {
     return {
       get(store, prop) {
@@ -344,21 +312,15 @@ export default class ValueStore {
     return isAbsent(this.__myProxy) ? false : this.__myProxy;
   }
 
-  get do() {
-    if (this._doProxy) return this._doProxy;
-    return { ...this._actions, ...this._doSetters };
-  }
-
   get my() {
-    if (this._myProxy) return this._myProxy;
+    if (this._myProxy) {
+      return this._myProxy;
+    }
     return this.value;
   }
 
   get value() {
     const out = {};
-    this._virtuals.forEach(({ value }, name) => {
-      out[name] = value;
-    });
     this.streams.forEach((stream, name) => {
       out[name] = stream.value;
     });
@@ -375,8 +337,12 @@ export default class ValueStore {
 
   values(...props) {
     return uniq(flatten(props)).reduce((out, prop) => {
-      if (this.streams.has(prop)) out[prop] = this.streams.get(prop).value;
-      if (this._virtuals.has(prop)) out[prop] = this._virtuals.get(prop).value;
+      if (this.streams.has(prop)) {
+        out[prop] = this.streams.get(prop).value;
+      }
+      if (this._virtuals.has(prop)) {
+        out[prop] = this._virtuals.get(prop).value;
+      }
       return out;
     }, {});
   }
@@ -397,6 +363,23 @@ export default class ValueStore {
     return sub;
   }
 
+  _canUpdate(obj) {
+    Object.keys(obj).forEach((name) => {
+      if (this.streams.has(name)) {
+        const value = obj[name];
+        if (!this.streams.get(name).accepts(value)) {
+          throw Object.assign(new Error(`${name} cannot accept this value`), { name, value, source: obj });
+        }
+      } else {
+        console.log(`attempt to update absent name ${name}`);
+      }
+    });
+  }
+
+  /**
+   * set several streams simultaneously.
+   * @param obj
+   */
   next(obj) {
     if (!(obj && isObject(obj))) {
       throw new Error('next requires object');
@@ -404,22 +387,17 @@ export default class ValueStore {
 
     const [error] = this.block(() => {
       // do a dry run - break on unacceptable values
-      Object.keys(obj).forEach((key) => {
-        if (this.streams.has(key)) {
-          const value = obj[key];
-          if (!this.streams.get(key).accepts(value)) {
-            throw Object.assign(new Error(`${key} cannot accept this value`), { key, value, source: obj });
-          }
-        }
-      });
+      this._canUpdate(obj);
       // then if no throw, actually set the values;
-      Object.keys(obj).forEach((key) => {
-        if (this.streams.has(key)) {
-          this.stream.next(obj[key]);
+      Object.keys(obj).forEach((name) => {
+        if (this.streams.has(name)) {
+          this.stream.next(obj[name]);
         }
       });
     });
-    if (error) throw error;
+    if (error) {
+      throw error;
+    }
   }
 
   get subjectValue() {
@@ -446,15 +424,19 @@ export default class ValueStore {
     this._closeSets();
   }
 
-  _makeStream(name, value, ...params) {
+  _makeStream(name, value, pre, post, comparator) {
     this.__propsToValue = null;
     testPropName(name);
     if (this.streams.has(name)) {
       throw new Error(`cannot redefine ${name}`);
     }
 
-    const stream = new Stream(this, name, value, ...params);
-    stream.metaSubject.subscribe(this._changeStream.next.bind(this._changeStream));
+    const stream = new Stream(this, name, value, pre, post, comparator);
+    const _sub = stream.changeSubject.subscribe(
+      (change) => this._changeSubject.next(change),
+      ID,
+      () => _sub.unsubscribe(),
+    );
     this.streams.set(name, stream);
   }
 
@@ -490,34 +472,49 @@ export default class ValueStore {
     if (!this.__propsToValue) {
       this.__propsToValue = {};
       this.streams.forEach((stream, name) => {
-        this.__propsToValue[identifier(name)] = stream;
+        this.__propsToValue[goodName(name)] = stream;
       });
     }
     return this.__propsToValue;
   }
 
-  stream(name, value, ...filters) {
-    this._makeStream(name, value, ...filters);
-    this._updateStream();
+  stream(name, value, pre, post, compare) {
+    this.makeStream(name, value, pre, post, compare);
     return this;
   }
 
-  property(...args) { return this.stream(...args); }
+  makeStream(name, value, pre, post, compare) {
+    this._makeStream(name, value, pre, post, compare);
+    this._updateStream();
+    return this.streams.get(name);
+  }
+
+  property(...args) {
+    return this.stream(...args);
+  }
+
+  get _block() {
+    if (!this.__block) {
+      this.__block = new SubjectBlock();
+      this.__block.subject.subscribe((count) => {
+        this.__block.next(count);
+      });
+    }
+    return this.__block;
+  }
 
   /**
-   * executes a function, interrupting all the updates until it is done.
+   * executes a function, interrupting all the updates until it is complete.
    * note - even if the function doesn't block, it may broadcast upon completion.
    * @param fn
    * @returns {[]}
    */
   block(fn) {
-    if (!this._block) {
-      this._block = new SubjectBlock();
-      this._block.subject.subscribe((count) => {
-        this._blockStream.next(count);
-      });
-    }
     return this._block.do(fn);
+  }
+
+  get changeSubject() {
+    return this._changeSubject;
   }
 
   _updateStream() {
@@ -531,6 +528,4 @@ proppify(ValueStore)
   .addProp('_actions', () => ({}))
   .addProp('streams', () => new Map())
   .addProp('_blockStream', () => new BehaviorSubject(0).pipe(distinctUntilChanged()))
-  .addProp('_changeStream', () => new Subject())
-  .addProp('_subject', () => new BehaviorSubject({}))
-  .addProp('_virtuals', () => new Map());
+  .addProp('_changeSubject', () => new Subject());

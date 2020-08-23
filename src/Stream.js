@@ -12,9 +12,10 @@ import { proppify } from '@wonderlandlabs/propper';
 
 import val, {
   isFunction, isObject, isArray,
-} from './validators';
+}                               from './validators';
 import { ID, ABSENT, isAbsent } from './absent';
-import Change from './Change';
+import Change                   from './Change';
+import pick                     from "./pick";
 
 /**
  * This decorates and expands a value (standard) Subject
@@ -53,6 +54,7 @@ export default class Stream {
       this._comparator = comparator;
     }
     this._initSubject(initialValue);
+    this._initChangeSubject(initialValue);
     this._initialized = true;
   }
 
@@ -60,7 +62,9 @@ export default class Stream {
     this._subject = new BehaviorSubject(initialValue)
       .pipe(distinctUntilChanged((...args) => this._compare(...args)));
 
-    this._subject.subscribe(value => this._value = value);
+    this._subject.subscribe((value) => {
+      this._value = value;
+    });
   }
 
   reset() {
@@ -69,8 +73,8 @@ export default class Stream {
     this.notes = null;
   }
 
-  _initChangeSubject() {
-    this._changeSubject = new Subject()
+  _initChangeSubject(initialValue) {
+    this._changeSubject = new BehaviorSubject(initialValue)
       .pipe(
         switchMap(
           (newValue) => of(newValue)
@@ -101,9 +105,6 @@ export default class Stream {
   }
 
   get changeSubject() {
-    if (!this._changeSubject) {
-      this._initChangeSubject();
-    }
     return this._changeSubject;
   }
 
@@ -125,7 +126,7 @@ export default class Stream {
   _compare(a, b) {
     if (this.__forceUpdate || (this._comparator === false)) return false;
     if (isFunction(this._comparator)) return this._comparator(a, b);
-    return a === b;
+    return a === b; xf;
   }
 
   comparator(f) {
@@ -169,7 +170,9 @@ export default class Stream {
   }
 
   next(value) {
-    this.changeSubject.next(value);
+    if (this.virtual) {
+      this._changeSubject.next(pick(this.store.my, this.virtualSubjects));
+    } else this.changeSubject.next(value);
   }
 
   complete() {
@@ -182,7 +185,7 @@ export default class Stream {
   }
 
   getPre(value) {
-    if (isFunction(this._pre)) return this._pre(value);
+    if (isFunction(this._pre)) return this._pre(value, this.store, this);
     return value;
   }
 
@@ -191,7 +194,7 @@ export default class Stream {
       errors: [], notes: null,
     };
     if (isFunction(this._post)) {
-      const post = this._post(value);
+      const post = this._post(value, this.store, this);
       if (post && isObject(post)) {
         if (isArray(post)) {
           meta.errors = post;

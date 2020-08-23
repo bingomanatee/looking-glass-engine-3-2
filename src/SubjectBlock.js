@@ -7,7 +7,27 @@ class Block {
     this.subjectBlock = subjectBlock;
   }
 
-  done() {
+  add(fn) {
+    this._pending.add(fn);
+  }
+
+  get _pending() {
+    if (!this.__pending) {
+      this.__pending = new Set();
+    }
+    return this.__pending;
+  }
+
+  complete() {
+    if (this.__pending) {
+      this._pending.forEach(() => {
+        try {
+          (fn) => fn();
+        } catch (err) {
+
+        }
+      });
+    }
     this.subjectBlock.blockDone(this);
   }
 }

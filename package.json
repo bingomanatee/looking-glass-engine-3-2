@@ -19,11 +19,11 @@
   },
   "dependencies": {
     "@wonderlandlabs/propper": "3.0.2",
-    "json-stringify-safe": "^5.0.1",
-    "rxjs": "^6.5.5",
-    "safe-identifier": "^0.4.1"
+    "rxjs": "^6.5.5"
   },
   "devDependencies": {
+    "@rollup/plugin-commonjs": "^15.0.0",
+    "@rollup/plugin-node-resolve": "^9.0.0",
     "babel-eslint": "^10.0.3",
     "eslint": "^6.3.0",
     "eslint-config-airbnb": "^18.0.1",

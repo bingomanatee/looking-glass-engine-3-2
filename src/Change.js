@@ -1,8 +1,8 @@
 import { proppify } from '@wonderlandlabs/propper';
 import uniq from './uniq';
-import { ABSENT } from './absent';
+import { ABSENT, ID } from './absent';
 import flatten from './flatten';
-import {isArray} from "./validators";
+import { isArray } from './validators';
 
 export default class Change {
   constructor(stream, next) {
@@ -35,7 +35,7 @@ export default class Change {
   post() {
     try {
       const { errors, notes } = this.stream.getPost(this.next);
-      if (isArray(errors)) this.errors = errors;
+      if (isArray(errors)) this.errors = uniq([...this.errors, ...errors]).filter(ID);
       this.notes = notes;
     } catch (error) {
       this.thrown.push({ at: 'post', error });
@@ -45,6 +45,9 @@ export default class Change {
 
 proppify(Change)
   .addProp('stream')
+  .addProp('value')
+  .addProp('virtual', false)
+  .addProp('virtualSubjects', [], 'array')
   .addProp('next')
   .addProp('nextValue', ABSENT)
   .addProp('errors', () => ([]), 'array')
