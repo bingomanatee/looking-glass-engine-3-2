@@ -1,21 +1,10 @@
-import {
-  map,
-  distinctUntilChanged,
-  switchMap,
-  catchError,
-  filter,
-} from 'rxjs/operators';
-import {
-  BehaviorSubject, Subject, of, combineLatest,
-} from 'rxjs';
+import { distinctUntilChanged, filter, map } from 'rxjs/operators';
+import { Subject } from 'rxjs';
 import { proppify } from '@wonderlandlabs/propper';
-
-import val, {
-  isFunction, isObject, isArray,
-}                               from './validators';
-import { ID, ABSENT, isAbsent } from './absent';
-import Change                   from './Change';
-import pick                     from "./pick";
+import { ID } from './absent';
+import Change from './Change';
+import pick from './pick';
+import Base from './Base';
 
 /**
  * This decorates and expands a value (standard) Subject
@@ -28,195 +17,70 @@ import pick                     from "./pick";
  * expressed as the next value, to for instance destructure arrays & objects into new references;
  */
 
-export default class Stream {
+export default class Stream extends Base {
   /**
    * @param store {ValueStore}
    * @param name {String}
    * @param initialValue any
    * @param pre {function | falsy} an optional function to pre-transform input
-   * @param post {function | falsy} an optional function to note errors / annotation of value
-   * @param comparator {function | false | null} an optional function to determine uniqueness
    */
-  constructor(store, name, initialValue = null, pre = null, post = null, comparator = null) {
-    this._value = initialValue;
-    this.store = store;
+  constructor(store, name, initialValue = null,
+    pre = ID) {
+    super(initialValue);
     this.name = name;
-    if (isObject(pre)) {
-      const {
-        pre: oPre, post: oPost, comparator: oComp,
-      } = pre;
-      this._pre = oPre;
-      this._post = oPost;
-      this._comparator = oComp;
-    } else {
-      this._pre = pre;
-      this._post = post;
-      this._comparator = comparator;
-    }
-    this._initSubject(initialValue);
-    this._initChangeSubject(initialValue);
+    this.store = store;
+    this.pre = pre;
+    this.next(initialValue);
     this._initialized = true;
   }
 
-  _initSubject(initialValue) {
-    this._subject = new BehaviorSubject(initialValue)
-      .pipe(distinctUntilChanged((...args) => this._compare(...args)));
-
-    this._subject.subscribe((value) => {
-      this._value = value;
-    });
-  }
-
-  reset() {
-    this.errors = [];
-    this.thrown = [];
-    this.notes = null;
-  }
-
-  _initChangeSubject(initialValue) {
-    this._changeSubject = new BehaviorSubject(initialValue)
-      .pipe(
-        switchMap(
-          (newValue) => of(newValue)
-            .pipe(
-              map((value) => {
-                const change = new Change(this, value);
-                change.pre();
-                return change;
-              }),
-              catchError(() => of(ABSENT)),
-            ),
-        ),
-        switchMap(
-          (newValue) => of(newValue)
-            .pipe(
-              map((change) => {
-                change.post();
-                return change;
-              }),
-              catchError(() => of(ABSENT)),
-            ),
-        ),
-        filter((change) => !isAbsent(change)),
-      );
-    this._changeSubject.subscribe((change) => {
-      if (!change.thrown.length) this._subject.next(change.nextValue);
-    });
-  }
-
-  get changeSubject() {
-    return this._changeSubject;
-  }
-
-  pre(fn) {
-    this._pre = fn;
-    if (this._initialized) this.force();
-  }
-
-  post(fn) {
-    this._post = fn;
-    if (this._initialized) this.force();
-  }
-
-  force() {
-    this.__forceUpdate = true;
-    this.next(this.value);
-  }
-
-  _compare(a, b) {
-    if (this.__forceUpdate || (this._comparator === false)) return false;
-    if (isFunction(this._comparator)) return this._comparator(a, b);
-    return a === b; xf;
-  }
-
-  comparator(f) {
-    this._comparator = f;
-    return this;
-  }
-
-  /**
-   * this is a magic property -- accessing it once will set it to false
-   * -- but its previous current value will be returned.
-   *
-   * @returns {boolean}
-   * @private
-   */
-  get __forceUpate() {
-    const out = !!this.___forceUpdate;
-    this.___forceUpdate = false;
-
-    return out;
-  }
-
-  set __forceUpdate(v) {
-    this.___forceUpdate = !!v;
-  }
-
-  get subject() {
-    return this._subject;
+  get value() {
+    return this.subject.value;
   }
 
   subscribe(...methods) {
-    this.subject.subscribe(...methods);
-  }
-
-  accepts(value) {
-    try {
-      this.getPost(value);
-      return true;
-    } catch (err) {
-      return false;
-    }
-  }
-
-  next(value) {
-    if (this.virtual) {
-      this._changeSubject.next(pick(this.store.my, this.virtualSubjects));
-    } else this.changeSubject.next(value);
+    const sub = this.subject.subscribe(...methods);
+    this.subSets.add(sub);
+    return sub;
   }
 
   complete() {
-    this._subject.complete();
-    if (this._changeSubject) this._changeSubject.complete();
+    this.subject.complete();
+    this.changes.complete();
+    super.complete();
   }
 
-  get value() {
-    return this._value;
-  }
-
-  getPre(value) {
-    if (isFunction(this._pre)) return this._pre(value, this.store, this);
-    return value;
-  }
-
-  getPost(value) {
-    const meta = {
-      errors: [], notes: null,
-    };
-    if (isFunction(this._post)) {
-      const post = this._post(value, this.store, this);
-      if (post && isObject(post)) {
-        if (isArray(post)) {
-          meta.errors = post;
-        } else Object.assign(meta, post);
-      }
+  next(value) {
+    if (this.done) {
+      return;
     }
-    return meta;
+    this._reset();
+    const change = new Change(this, value);
+    try {
+      change.nextValue = this.pre(value, this);
+    } catch (error) {
+      change.thrown = error;
+      error.change = change;
+      change.thrownAt = 'pre';
+    }
+
+    if (!change.thrown) {
+      this.subject.next(change.nextValue);
+    }
+    Object.assign(change, pick(this, 'errors', 'notes'));
+
+    this.store.next(change);
+    if (change.thrown) throw change.thrown;
   }
 
-  get meta() {
-    return {
-      value: this.value,
-      errors: [...this.errors],
-      notes: this.notes,
-      hasErrors: this.errors.length,
-    };
+  _reset() {
+    this.errors = [];
+    this.notes = null;
   }
 }
 
 proppify(Stream)
   .addProp('errors', () => ([]), 'array')
-  .addProp('thrown', () => ([]), 'array')
-  .addProp('_comparator', null)
-  .addProp('type', '', 'string')
-  .addProp('notes', null);
+  .addProp('notes', null)
+  .addProp('pre', ID, 'function')
+  .addProp('changes', () => new Subject());

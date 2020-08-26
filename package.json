@@ -11,7 +11,7 @@
   ],
   "scripts": {
     "testb": "yarn build; tap test test/* -R=base",
-    "testbo": "TAP_ONLY=1 yarn build; tap test test/* -R=base",
+    "testbo": "yarn build;TAP_ONLY=1 tap test test/* -R=base",
     "test": "tap test test/* -R=base",
     "testo": "TAP_ONLY=1 tap test test/* -R=base",
     "build": "node_modules/rollup/dist/bin/rollup -c='rollup.config.js'",
@@ -19,6 +19,8 @@
   },
   "dependencies": {
     "@wonderlandlabs/propper": "3.0.2",
+    "chalk": "^4.1.0",
+    "nanoid": "^3.1.12",
     "rxjs": "^6.5.5"
   },
   "devDependencies": {

@@ -1,55 +1,56 @@
 import { proppify } from '@wonderlandlabs/propper';
+import chalk from 'chalk';
+import { nanoid } from 'nanoid';
 import uniq from './uniq';
 import { ABSENT, ID } from './absent';
 import flatten from './flatten';
 import { isArray } from './validators';
+import pick from './pick';
 
 export default class Change {
   constructor(stream, next) {
-    this.value = stream.value;
+    this.value = next;
+    this.lastValue = stream.value;
     this.stream = stream;
-    this.next = next;
+    this.id = `change_${nanoid()}`;
   }
 
-  toJSON() {
-    return {
-      name: this.stream.name,
+  get redundant() {
+    return !this.stream._compare(this.stream.value, this.nextValue);
+  }
+
+  get name() {
+    return this.stream.name;
+  }
+
+  toJSON(id) {
+    const out = {
+      id: id || this.id,
       value: this.value,
-      next: this.next,
+      lastValue: this.lastValue,
       nextValue: this.nextValue,
-      errors: this.errors,
-      notes: this.notes,
-      thrown: this.thrown,
     };
+
+    if (this.thrown) {
+      out.thrown = this.thrown.message ? this.thrown.message : this.thrown;
+      out.thrownAt = this.thrownAt;
+    }
+    if (this.stream.errors.length) out.errors = [...this.stream.errors];
+    if ((this.stream.notes && !isArray(this.stream.notes)) || (isArray(this.stream.notes) && this.stream.notes.length)) out.notes = this.stream.notes;
+    return out;
   }
 
-  pre() {
-    try {
-      const value = this.stream.getPre(this.next);
-      this.nextValue = value;
-    } catch (error) {
-      this.thrown.push({ at: 'pre', error });
-    }
-  }
-
-  post() {
-    try {
-      const { errors, notes } = this.stream.getPost(this.next);
-      if (isArray(errors)) this.errors = uniq([...this.errors, ...errors]).filter(ID);
-      this.notes = notes;
-    } catch (error) {
-      this.thrown.push({ at: 'post', error });
-    }
+  get thrownString() {
+    return this.thrown.reduce((s, e) => [...s, e.message], [])
+      .join(',');
   }
 }
 
 proppify(Change)
   .addProp('stream')
   .addProp('value')
-  .addProp('virtual', false)
-  .addProp('virtualSubjects', [], 'array')
-  .addProp('next')
+  .addProp('thrown')
+  .addProp('thrownAt', '', 'string')
   .addProp('nextValue', ABSENT)
-  .addProp('errors', () => ([]), 'array')
-  .addProp('thrown', () => ([]), 'array')
+  .addProp('lastValue')
   .addProp('notes');

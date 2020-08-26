@@ -1,9 +1,9 @@
 /* eslint-disable camelcase */
-
+const { Subject } = require('rxjs');
 const tap = require('tap');
 const p = require('../package.json');
 
-const { Stream, ABSENT } = require('../lib');
+const { Stream, ABSENT, Change } = require('../lib');
 
 /**
  *  testing basic name, value, deserialization
@@ -11,9 +11,12 @@ const { Stream, ABSENT } = require('../lib');
  */
 
 tap.test(p.name, (suite) => {
-  suite.test('no pre/post', (noPrePost) => {
+  suite.test('basic', (noPrePost) => {
     noPrePost.test('subscribe', (sub) => {
-      const count = new Stream({}, 'count', 1);
+      const updates = [];
+      const fakeStore = new Subject();
+      fakeStore.subscribe((change) => updates.push(change.toJSON(updates.length + 1)));
+      const count = new Stream(fakeStore, 'count', 1);
 
       let latest = null;
       const history = [];
@@ -24,78 +27,68 @@ tap.test(p.name, (suite) => {
         console.log('error in subscribe: ', err);
       });
 
+      const FIRST = {
+        value: 1,
+        lastValue: 1,
+        nextValue: 1,
+        id: 1,
+      };
+      const SECOND = {
+        value: 2,
+        lastValue: 1,
+        nextValue: 2,
+        id: 2,
+      };
+      const THIRD = {
+        value: 100,
+        lastValue: 2,
+        nextValue: 100,
+        id: 3,
+      };
+
       sub.same(latest, 1);
       sub.same(count.value, 1);
+      sub.same(updates, [FIRST]);
       sub.same(history, [1]);
 
       count.next(2);
+
+      sub.same(latest, 2);
       sub.same(count.value, 2);
+      sub.same(updates, [FIRST, SECOND]);
       sub.same(history, [1, 2]);
 
-      count.next(3);
-      sub.same(count.value, 3);
-      sub.same(history, [1, 2, 3]);
+      count.next(100);
 
-      sub.same(latest, 3);
-      sub.same(count.value, 3);
-      sub.same(history, [1, 2, 3]);
-
-      count.complete();
-
-      count.next(4);
-
-      // completed streams don't emit.
-      sub.same(latest, 3);
-      sub.same(history, [1, 2, 3]);
-
-      sub.end();
-    });
-    noPrePost.test('changeSubject', (sub) => {
-      const count = new Stream({}, 'count', 1);
-
-      let latestChange = null;
-
-      count.changeSubject.subscribe(
-        (output) => {
-          latestChange = output;
-        },
-        (err) => console.error('meta subject error:', err),
-      );
-
-      count.next(2);
-
-      sub.same(latestChange.nextValue, 2);
-      sub.same(latestChange.notes, null);
-      sub.same(latestChange.errors, []);
-      sub.same(count.value, 2);
-
-      count.next(3);
-
-      sub.same(latestChange.nextValue, 3);
-      sub.same(latestChange.notes, null);
-      sub.same(latestChange.errors, []);
-      sub.same(count.value, 3);
+      sub.same(latest, 100);
+      sub.same(count.value, 100);
+      sub.same(updates, [FIRST, SECOND, THIRD]);
+      sub.same(history, [1, 2, 100]);
 
       count.complete();
 
-      count.next(4);
+      count.next(200);
 
-      // completed streams don't emit.
-      sub.same(latestChange.nextValue, 3);
-      sub.same(latestChange.notes, null);
-      sub.same(latestChange.errors, []);
-      sub.same(count.value, 3);
+      sub.same(latest, 100);
+      sub.same(count.value, 100);
+      sub.same(updates, [FIRST, SECOND, THIRD]);
+      sub.same(history, [1, 2, 100]);
 
       sub.end();
     });
     noPrePost.end();
   });
 
-  suite.test('preFilter', (preFilter) => {
-    preFilter.test('number floor', (sub) => {
-      const count = new Stream({}, 'count', 1, (n) => {
-        if (typeof (n) === 'number') return Math.floor(n);
-        throw new Error('not a number');
+  suite.test('with pre', (postFilter) => {
+    postFilter.test('subscribe - filter', (sub) => {
+      const updates = [];
+      const fakeStore = new Subject();
+      fakeStore.subscribe((change) => updates.push(change.toJSON(updates.length + 1)));
+      const count = new Stream(fakeStore, 'count', 1, (value) => {
+        if (typeof value !== 'number') {
+          return 0;
+        }
+        return Math.floor(value);
       });
 
       let latest = null;
@@ -107,121 +100,66 @@ tap.test(p.name, (suite) => {
         console.log('error in subscribe: ', err);
       });
 
+      const FIRST = {
+        value: 1,
+        lastValue: 1,
+        nextValue: 1,
+        id: 1,
+      };
+      const SECOND = {
+        value: 2.5,
+        lastValue: 1,
+        nextValue: 2,
+        id: 2,
+      };
+      const THIRD = {
+        value: 'one hundred',
+        lastValue: 2,
+        nextValue: 0,
+        id: 3,
+      };
+
       sub.same(latest, 1);
-      sub.same(history, [1]);
       sub.same(count.value, 1);
-
-      count.next(1.1);
-
-      sub.same(latest, 1);
+      sub.same(updates, [FIRST]);
       sub.same(history, [1]);
 
-      count.next(2);
-      sub.same(history, [1, 2]);
+      count.next(2.5);
+
+      sub.same(latest, 2);
       sub.same(count.value, 2);
-
-      count.next(3);
-      count.next(3);
-      sub.same(latest, 3);
-      sub.same(history, [1, 2, 3]);
-      sub.same(count.value, 3);
-
-      sub.same(latest, 3);
-      sub.same(history, [1, 2, 3]);
-
-      count.complete();
-
-      // completed streams don't emit.
-      count.next(4);
-      sub.same(count.value, 3);
-      sub.same(latest, 3);
-      sub.same(history, [1, 2, 3]);
-
-      sub.end();
-    });
-    preFilter.test('changeSubject', (sub) => {
-      const count = new Stream({}, 'count', 1, (n) => {
-        if (typeof (n) === 'number') return Math.floor(n);
-        throw new Error('not a number');
-      });
-
-      let latest = null;
-      const history = [];
-
-      count.subscribe((value) => history.push(value));
-      count.changeSubject.subscribe((output) => {
-        latest = output;
-      }, (err) => console.error('meta subject error:', err),
-      () => console.log('---- complete'));
-
-      sub.same(history, [1]);
-
-      count.next(2);
-
-      sub.same(latest.nextValue, 2);
-      sub.same(latest.errors, []);
-      sub.same(latest.thrown, []);
-      sub.same(latest.notes, null);
+      sub.same(updates, [FIRST, SECOND]);
       sub.same(history, [1, 2]);
 
-      count.next(3);
+      count.next('one hundred');
 
-      sub.same(latest.nextValue, 3);
-      sub.same(latest.errors, []);
-      sub.same(latest.thrown, []);
-      sub.same(latest.notes, null);
-      sub.same(history, [1, 2, 3]);
-
-      count.next(4.5);
-
-      sub.same(latest.next, 4.5);
-      sub.same(latest.nextValue, 4);
-      sub.same(latest.errors, []);
-      sub.same(latest.thrown, []);
-      sub.same(latest.notes, null);
-      sub.same(history, [1, 2, 3, 4]);
-
-      count.next('five');
-      sub.same(latest.next, 'five');
-      sub.same(latest.nextValue, ABSENT);
-      sub.same(latest.errors, []);
-      sub.same(latest.notes, null);
-      sub.same(latest.thrown[0].error.message, 'not a number');
-      sub.same(latest.thrown[0].at, 'pre');
-      sub.same(count.value, 4);
-      sub.same(history, [1, 2, 3, 4]);
+      sub.same(latest, 0);
+      sub.same(count.value, 0);
+      sub.same(updates, [FIRST, SECOND, THIRD]);
+      sub.same(history, [1, 2, 0]);
 
       count.complete();
 
-      count.next(6);
+      count.next(200);
 
-      // completed streams don't emit.
-
-      sub.same(latest.next, 'five');
-      sub.same(latest.nextValue, ABSENT);
-      sub.same(latest.errors, []);
-      sub.same(latest.notes, null);
-      sub.same(history, [1, 2, 3, 4]);
+      sub.same(latest, 0);
+      sub.same(count.value, 0);
+      sub.same(updates, [FIRST, SECOND, THIRD]);
+      sub.same(history, [1, 2, 0]);
 
       sub.end();
     });
-
-    preFilter.end();
-  });
-
-  suite.test('postFilter', (post) => {
-    post.test('number floor', (sub) => {
-      const count = new Stream({}, 'count', 1, null, (n) => {
-        if (typeof n !== 'number') {
-          return {
-            errors: ['must be number'],
-          };
+    postFilter.test('subscribe - filter and throw', (subThrow) => {
+      const updates = [];
+      const fakeStore = new Subject();
+      fakeStore.subscribe((change) => {
+        updates.push(change.toJSON(updates.length + 1));
+      });
+      const count = new Stream(fakeStore, 'count', 1, (value) => {
+        if (typeof value !== 'number') {
+          throw new Error('not a number');
         }
-        return {
-          notes: {
-            floor: Math.floor(n),
-          },
-        };
+        return Math.floor(value);
       });
 
       let latest = null;
@@ -233,140 +171,258 @@ tap.test(p.name, (suite) => {
         console.log('error in subscribe: ', err);
       });
 
-      sub.same(latest, 1);
-      sub.same(history, [1]);
-      sub.same(count.value, 1);
+      const FIRST = {
+        value: 1,
+        lastValue: 1,
+        nextValue: 1,
+        id: 1,
+      };
+      const SECOND = {
+        value: 2.5,
+        lastValue: 1,
+        nextValue: 2,
+        id: 2,
+      };
+      const THIRD = {
+        id: 3,
+        value: 'one hundred',
+        lastValue: 2,
+        nextValue: ABSENT,
+        thrown: 'not a number',
+        thrownAt: 'pre',
+      };
 
-      count.next(1.1);
+      const FOURTH = {
+        value: 100.1,
+        lastValue: 2,
+        nextValue: 100,
+        id: 4,
+      };
 
-      sub.same(latest, 1.1);
-      sub.same(history, [1, 1.1]);
+      subThrow.same(latest, 1);
+      subThrow.same(count.value, 1);
+      subThrow.same(updates, [FIRST]);
+      subThrow.same(history, [1]);
 
-      count.next(2);
-      sub.same(history, [1, 1.1, 2]);
-      sub.same(count.value, 2);
+      count.next(2.5);
 
-      count.next(3);
-      count.next(3);
-      sub.same(latest, 3);
-      sub.same(history, [1, 1.1, 2, 3]);
-      sub.same(count.value, 3);
+      subThrow.same(latest, 2);
+      subThrow.same(count.value, 2);
+      subThrow.same(updates, [FIRST, SECOND]);
+      subThrow.same(history, [1, 2]);
+      let err;
 
-      sub.same(latest, 3);
-      sub.same(history, [1, 1.1, 2, 3]);
+      try {
+        count.next('one hundred');
+      } catch (error) {
+        err = error;
+      }
+      subThrow.same(err.message, 'not a number');
+
+      subThrow.same(latest, 2);
+      subThrow.same(count.value, 2);
+      subThrow.same(updates, [FIRST, SECOND, THIRD]);
+      subThrow.same(history, [1, 2]);
+
+      count.next(100.1);
+
+      subThrow.same(latest, 100);
+      subThrow.same(count.value, 100);
+      subThrow.same(updates, [FIRST, SECOND, THIRD, FOURTH]);
+      subThrow.same(history, [1, 2, 100]);
 
       count.complete();
 
-      // completed streams don't emit.
-      count.next(4);
-      sub.same(count.value, 3);
-      sub.same(latest, 3);
-      sub.same(history, [1, 1.1, 2, 3]);
+      count.next(200);
 
-      sub.end();
+      subThrow.same(latest, 100);
+      subThrow.same(count.value, 100);
+      subThrow.same(updates, [FIRST, SECOND, THIRD, FOURTH]);
+      subThrow.same(history, [1, 2, 100]);
+
+      subThrow.end();
     });
-    post.test('changeSubject', (sub) => {
-      const count = new Stream({}, 'count', 1, null, (n) => {
-        if (typeof n !== 'number') {
-          return {
-            errors: ['must be number'],
-          };
+    postFilter.test('subscribe - filter and error', (subThrow) => {
+      const updates = [];
+      const fakeStore = new Subject();
+      fakeStore.subscribe((change) => {
+        updates.push(change.toJSON(updates.length + 1));
+      });
+      const count = new Stream(fakeStore, 'count', 1, (value, { errors }) => {
+        if (typeof value !== 'number') {
+          errors.push('not a number');
+          return 0;
         }
-        return {
-          notes: {
-            floor: Math.floor(n),
-          },
-        };
+        return Math.floor(value);
       });
 
       let latest = null;
       const history = [];
-
-      count.subscribe((value) => {
-        history.push(value);
-      });
-      count.changeSubject.subscribe((output) => {
+      count.subscribe((output) => {
         latest = output;
-      }, (err) => console.error('meta subject error:', err));
-
-      sub.same(history, [1]);
-
-      sub.same(latest.nextValue, 1);
-      sub.same(latest.errors, []);
-      sub.same(latest.thrown, []);
-      sub.same(latest.notes, {
-        floor: 1,
+        history.push(output);
+      }, (err) => {
+        console.log('error in subscribe: ', err);
       });
-      sub.same(history, [1]);
 
-      count.next(2);
+      const FIRST = {
+        value: 1,
+        lastValue: 1,
+        nextValue: 1,
+        id: 1,
+      };
+      const SECOND = {
+        value: 2.5,
+        lastValue: 1,
+        nextValue: 2,
+        id: 2,
+      };
+      const THIRD = {
+        id: 3,
+        value: 'one hundred',
+        lastValue: 2,
+        nextValue: 0,
+        errors: ['not a number'],
+      };
 
-      sub.same(latest.nextValue, 2);
-      sub.same(latest.errors, []);
-      sub.same(latest.thrown, []);
-      sub.same(latest.notes, {
-        floor: 2,
-      });
-      sub.same(history, [1, 2]);
+      const FOURTH = {
+        value: 100.1,
+        lastValue: 0,
+        nextValue: 100,
+        id: 4,
+      };
 
-      count.next(3);
+      subThrow.same(latest, 1);
+      subThrow.same(count.value, 1);
+      subThrow.same(updates, [FIRST]);
+      subThrow.same(history, [1]);
 
-      sub.same(latest.nextValue, 3);
-      sub.same(latest.errors, []);
-      sub.same(latest.thrown, []);
-      sub.same(latest.notes, {
-        floor: 3,
-      });
-      sub.same(history, [1, 2, 3]);
+      count.next(2.5);
 
-      count.next(4.5);
+      subThrow.same(latest, 2);
+      subThrow.same(count.value, 2);
+      subThrow.same(updates, [FIRST, SECOND]);
+      subThrow.same(history, [1, 2]);
 
-      sub.same(latest.next, 4.5);
-      sub.same(latest.nextValue, 4.5);
-      sub.same(latest.errors, []);
-      sub.same(latest.thrown, []);
-      sub.same(latest.notes, {
-        floor: 4,
-      });
-      sub.same(history, [1, 2, 3, 4.5]);
+      count.next('one hundred');
 
-      count.next('five');
-      sub.same(latest.next, 'five');
-      sub.same(latest.nextValue, 'five');
-      sub.same(latest.errors, ['must be number']);
-      sub.same(latest.notes, null);
-      sub.same(count.value, 'five');
-      sub.same(history, [1, 2, 3, 4.5, 'five']);
+      subThrow.same(latest, 0);
+      subThrow.same(count.value, 0);
+      subThrow.same(updates, [FIRST, SECOND, THIRD]);
+      subThrow.same(history, [1, 2, 0]);
 
-      count.next(6);
+      count.next(100.1);
 
-      sub.same(latest.next, 6);
-      sub.same(latest.nextValue, 6);
-      sub.same(latest.errors, []);
-      sub.same(latest.thrown, []);
-      sub.same(latest.notes, {
-        floor: 6,
-      });
-      sub.same(history, [1, 2, 3, 4.5, 'five', 6]);
+      subThrow.same(latest, 100);
+      subThrow.same(count.value, 100);
+      subThrow.same(updates, [FIRST, SECOND, THIRD, FOURTH]);
+      subThrow.same(history, [1, 2, 0, 100]);
 
       count.complete();
 
-      count.next(7);
+      count.next(200);
 
-      // completed streams don't emit.
+      subThrow.same(latest, 100);
+      subThrow.same(count.value, 100);
+      subThrow.same(updates, [FIRST, SECOND, THIRD, FOURTH]);
+      subThrow.same(history, [1, 2, 0, 100]);
 
-      sub.same(latest.next, 6);
-      sub.same(latest.nextValue, 6);
-      sub.same(latest.errors, []);
-      sub.same(latest.notes, {
-        floor: 6,
-      });
-      sub.same(history, [1, 2, 3, 4.5, 'five', 6]);
-
-      sub.end();
+      subThrow.end();
     });
+    postFilter.test('subscribe - filter and note', (subThrow) => {
+      const updates = [];
+      const fakeStore = new Subject();
+      fakeStore.subscribe((change) => {
+        updates.push(change.toJSON(updates.length + 1));
+      });
+      const count = new Stream(fakeStore, 'count', 1, (value, change) => {
+        if (typeof value !== 'number') {
+          change.notes = { floor: 0 };
+          change.errors.push('not a number');
+          return 0;
+        }
+        change.notes = { floor: Math.floor(value) };
+        return value;
+      });
 
-    post.end();
+      let latest = null;
+      const history = [];
+      count.subscribe((output) => {
+        latest = output;
+        history.push(output);
+      }, (err) => {
+        console.log('error in subscribe: ', err);
+      });
+
+      const FIRST = {
+        value: 1,
+        lastValue: 1,
+        nextValue: 1,
+        id: 1,
+        notes: { floor: 1 },
+      };
+      const SECOND = {
+        value: 2.5,
+        lastValue: 1,
+        nextValue: 2.5,
+        notes: { floor: 2 },
+        id: 2,
+      };
+      const THIRD = {
+        id: 3,
+        value: 'one hundred',
+        lastValue: 2.5,
+        nextValue: 0,
+        notes: { floor: 0 },
+        errors: ['not a number'],
+      };
+
+      const FOURTH = {
+        value: 100.1,
+        lastValue: 0,
+        nextValue: 100.1,
+        notes: { floor: 100 },
+        id: 4,
+      };
+
+      subThrow.same(latest, 1);
+      subThrow.same(count.value, 1);
+      subThrow.same(updates, [FIRST]);
+      subThrow.same(history, [1]);
+
+      count.next(2.5);
+
+      subThrow.same(latest, 2.5);
+      subThrow.same(count.value, 2.5);
+      subThrow.same(updates, [FIRST, SECOND]);
+      subThrow.same(history, [1, 2.5]);
+
+      count.next('one hundred');
+
+      subThrow.same(latest, 0);
+      subThrow.same(count.value, 0);
+      subThrow.same(updates, [FIRST, SECOND, THIRD]);
+      subThrow.same(history, [1, 2.5, 0]);
+
+      count.next(100.1);
+
+      subThrow.same(latest, 100.1);
+      subThrow.same(count.value, 100.1);
+      subThrow.same(updates, [FIRST, SECOND, THIRD, FOURTH]);
+      subThrow.same(history, [1, 2.5, 0, 100.1]);
+
+      count.complete();
+
+      count.next(200);
+
+      subThrow.same(latest, 100.1);
+      subThrow.same(count.value, 100.1);
+      subThrow.same(updates, [FIRST, SECOND, THIRD, FOURTH]);
+      subThrow.same(history, [1, 2.5, 0, 100.1]);
+
+      subThrow.end();
+    });
+    postFilter.end();
   });
 
   suite.end();
