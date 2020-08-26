@@ -3,11 +3,12 @@ import { proppify } from '@wonderlandlabs/propper';
 import { distinctUntilChanged, filter, map } from 'rxjs/operators';
 import { isArray, isFunction, isObject } from './validators';
 import Stream from './Stream';
-import { ABSENT, ID } from './absent';
+import { ABSENT, ID, isAbsent } from './absent';
 import Change from './Change';
 import Base from './Base';
 import upperFirst from './upperFirst';
 import lowerFirst from './lowerFirst';
+import flatten from './flatten';
 
 // @TODO: namespace conflict between virtuals and properties.
 const SET_RE = /^set(.+)$/i;
@@ -130,27 +131,42 @@ export default class ValueStore extends Base {
 
   virtual(name, fn, ...dependants) {
     const fields = flatten(dependants);
-    let stream;
-    const recompute = () => {
-      try {
-        return fn(this.values(fields), this);
-      } catch (err) {
-        const change = new Change(stream, ABSENT);
-        change.thrown = err;
-        change.thrownAt = 'virtual';
-        err.change = change;
-        this.next(change);
+    const stream = new BehaviorSubject(ABSENT);
+    stream.name = name;
+    try {
+      stream.next(fn(this.values(fields)));
+    } catch (err) {
+      console.log('failed to initialize virtual ', name, 'from ', fields);
+      if (this._initialized) {
+        this.next(Object.assign(new Change(stream, ABSENT),
+          { thrown: err, thrownAt: 'virtual-initialization' }));
       }
-    };
-    stream = new BehaviorSubject(recompute())
-      .pipe(map(recompute),
-        distinctUntilChanged());
+    }
     this.streams.set(name, stream);
-    this.changes.subscribe((change) => {
-      if (change instanceof Change) {
-        if (fields.include(change.name)) {
-          stream.next();
-        }
+    let lastValue = null;
+
+    // Create a simple stream of computed values
+    this.subSets.add(stream.subscribe((value) => {
+      if (isAbsent(value)) return;
+      const update = new Change(stream, value, lastValue);
+      lastValue = value;
+      this.next(update);
+    }));
+
+    // on relevant changes
+    this.changes.pipe(
+      filter((change) => change instanceof Change && !change.thrown && fields.include(change.name)),
+    ).subscribe(() => {
+      try {
+        // update stream based on current values
+        const next = fn(this.values(fields));
+        stream.next(next);
+      } catch (err) {
+        // report calculation errors
+        this.next(Object.assign(new Change(stream, ABSENT, lastValue), {
+          thrown: err,
+          thrownAt: 'virtual',
+        }));
       }
     });
   }

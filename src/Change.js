@@ -1,16 +1,15 @@
 import { proppify } from '@wonderlandlabs/propper';
-import chalk from 'chalk';
 import { nanoid } from 'nanoid';
-import uniq from './uniq';
-import { ABSENT, ID } from './absent';
+import { ABSENT, ID, isAbsent } from './absent';
 import flatten from './flatten';
 import { isArray } from './validators';
 import pick from './pick';
 
 export default class Change {
-  constructor(stream, next) {
+  constructor(stream, next, last = ABSENT) {
     this.value = next;
-    this.lastValue = stream.value;
+    this.nextValue = next;
+    this.lastValue = isAbsent(last) ? stream.value : last;
     this.stream = stream;
     this.id = `change_${nanoid()}`;
   }
@@ -28,9 +27,14 @@ export default class Change {
       id: id || this.id,
       value: this.value,
       lastValue: this.lastValue,
-      nextValue: this.nextValue,
     };
 
+    if (!isAbsent(this.nextValue)) {
+      out.nextValue = this.nextValue;
+    }
+    if (!isAbsent(this.lastValue)) {
+      out.lastValue = this.lastValue;
+    }
     if (this.thrown) {
       out.thrown = this.thrown.message ? this.thrown.message : this.thrown;
       out.thrownAt = this.thrownAt;

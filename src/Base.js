@@ -13,10 +13,14 @@ const _id = () => {
 };
 class Base {
   constructor(initial = ABSENT) {
-    this.id = _id();
+    this._id = _id();
     if (!isAbsent(initial)) {
       this.subject.next(initial);
     }
+  }
+
+  get id() {
+    return this._id;
   }
 
   complete() {

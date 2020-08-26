@@ -186,8 +186,8 @@ tap.test(p.name, (suite) => {
       const THIRD = {
         id: 3,
         value: 'one hundred',
+        nextValue: 'one hundred',
         lastValue: 2,
-        nextValue: ABSENT,
         thrown: 'not a number',
         thrownAt: 'pre',
       };
