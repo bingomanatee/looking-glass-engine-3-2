@@ -1,4 +1,4 @@
-import { isAbsent } from './absent';
+import { isAbsent }               from './absent';
 import val , {isString, isNumber} from './validators';
 
 export default function testPropertyName(name, error = 'invalid property name') {

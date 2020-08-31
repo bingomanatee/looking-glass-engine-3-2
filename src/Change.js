@@ -1,7 +1,7 @@
 import { proppify } from '@wonderlandlabs/propper';
-import { nanoid } from 'nanoid';
+import { nanoid }               from 'nanoid';
 import { ABSENT, ID, isAbsent } from './absent';
-import flatten from './flatten';
+import flatten                  from './flatten';
 import { isArray } from './validators';
 import pick from './pick';
 

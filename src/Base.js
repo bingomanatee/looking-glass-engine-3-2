@@ -1,5 +1,5 @@
 import { BehaviorSubject } from 'rxjs';
-import { proppify } from '@wonderlandlabs/propper';
+import { proppify }         from '@wonderlandlabs/propper';
 import { isAbsent, ABSENT } from './absent';
 
 const _id = () => {

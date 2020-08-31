@@ -1,10 +1,21 @@
 import { ABSENT } from './absent';
 import validators from './validators';
-import Stream from './Stream';
-import ValueStore from './ValueStore';
+import ValueStream from './ValueStream';
 import SubjectBlock from './SubjectBlock';
-import Change from './Change';
+import changeSubject from './changeSubject';
+import {
+  STAGE_PERFORM, STAGE_PENDING, STAGE_COMPLETE, STAGE_BEGIN, STAGE_PROCESS,
+} from './constants';
 
 export default {
-  validators, Stream, ValueStore, ABSENT, SubjectBlock, Change,
+  STAGE_PERFORM,
+  STAGE_PENDING,
+  STAGE_COMPLETE,
+  STAGE_BEGIN,
+  STAGE_PROCESS,
+  validators,
+  ValueStream,
+  ABSENT,
+  SubjectBlock,
+  changeSubject,
 };

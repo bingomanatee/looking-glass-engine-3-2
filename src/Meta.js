@@ -1,6 +1,6 @@
 import { proppify } from '@wonderlandlabs/propper';
 import val, { isFunction, isObject, isString } from './validators';
-import { ABSENT, isAbsent } from './absent';
+import { ABSENT, isAbsent }                    from './absent';
 
 export default class Meta {
   constructor(test, params, pOrder = ABSENT) {
