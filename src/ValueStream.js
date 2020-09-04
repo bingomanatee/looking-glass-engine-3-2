@@ -1,16 +1,15 @@
-import { BehaviorSubject, Subject } from 'rxjs';
-import { distinct, distinctUntilChanged, filter } from 'rxjs/operators';
+import { BehaviorSubject, Subject, combineLatest } from 'rxjs';
+import {
+  distinct, distinctUntilChanged, filter, map,
+} from 'rxjs/operators';
 import { proppify } from '@wonderlandlabs/propper';
 
 import { isFunction, isObject } from './validators';
-import Base from './Base';
 import changeSubject from './changeSubject';
-import streamArray from './streamArray';
-import streamMap from './streamMap';
 import {
   ACTION_NEXT, STAGE_BEGIN, STAGE_COMPLETE, STAGE_PENDING, STAGE_PERFORM, STAGE_PROCESS,
 } from './constants';
-import { ABSENT, isAbsent } from './absent';
+import { ABSENT, ID, isAbsent } from './absent';
 import uniq from './uniq';
 import flatten from './flatten';
 
@@ -29,7 +28,6 @@ export default class ValueStream {
       (e) => console.log('----------- error: ', e)); */
     this._watchForNext();
     this._watchForActions();
-    console.log('--- setting next: ', initial);
 
     if (config && isObject(config)) {
       if (config.actions) {
@@ -41,6 +39,23 @@ export default class ValueStream {
     }
 
     this.next(initial);
+  }
+
+  get bufferedSubject() {
+    if (!this._bufferedSubject) {
+      const changeSet = new Set();
+      this._bufferedSubject = new BehaviorSubject(0);
+
+      this.eventSubject.subscribe((change) => {
+        if (!changeSet.has(change)) {
+          changeSet.add(change);
+          this._bufferedSubject.next(changeSet.size);
+          const purgeChange = () => changeSet.remove(change);
+          change.subscribe(ID, purgeChange, purgeChange);
+        }
+      });
+    }
+    return this._bufferedSubject;
   }
 
   execute(action, value, stages = []) {
@@ -74,23 +89,17 @@ export default class ValueStream {
   }
 
   _watchForNext() {
-    this.subSets.add(this.eventSubject.pipe(filter((change) => {
-      if (this.DEBUG) console.log('event subject got ', change.value);
-      const { stage, action } = change.value;
-      return stage === STAGE_COMPLETE && action === ACTION_NEXT;
-    }))
-      .subscribe((change) => {
-        this._valueSubject.next(change.value.value);
-        if (!change.hasError) {
-          this.errorSubject.next(false);
-        }
-      }));
+    this.on({ action: ACTION_NEXT, stage: STAGE_COMPLETE }, (change) => {
+      this._valueSubject.next(change.value.value);
+      if (!change.hasError) {
+        this.errorSubject.next(false);
+      }
+    });
   }
 
   on(condition, response) {
     if (!isFunction(response)) {
-      console.log('on must end in a function');
-      return this;
+      throw new Error('on must end in a function');
     }
     let selectedEvents;
     if (isObject(condition)) {
@@ -102,14 +111,9 @@ export default class ValueStream {
               if (!valid) return false;
               const target = condition[name];
               const changeProp = change.value[name];
-              if (target !== changeProp) {
-                return false;
-              }
-              return true;
+              return target === changeProp;
             }, true,
           );
-          console.log('change:', change.value, 'cond:', condition,
-            'filtered: ', filtered);
           return filtered;
         }));
     } else if (isFunction(condition)) {
@@ -167,13 +171,6 @@ export default class ValueStream {
     return this;
   }
 
-  valueToStreams() {
-    this.valueToMap();
-    this.value.forEach((value, name) => {
-      this.addStream(name, value);
-    });
-  }
-
   // not currently employed
   doAction(name, ...args) {
     if (!this.actions.has(name)) {
@@ -192,31 +189,19 @@ export default class ValueStream {
     return sub;
   }
 
-  addStream(name, value = ABSENT, stream = null) {
-    if (this.streams.has(name)) {
-      throw new Error(`cannot redefine ${name}`);
+  get _bufferedValues() {
+    if (!this.__bufferedValues) {
+      this.__bufferedValues = combineLatest(this.bufferedSubject, this._valueSubject)
+        .pipe(filter(([count]) => count < 1),
+          map(([_, v]) => v));
     }
+    return this.__bufferedValues;
+  }
 
-    if (isAbsent(value)) {
-      value = this.value.get(name) || null;
-    }
-
-    this.streams.set(name, stream || new ValueStream(value));
-
-    if (stream.errorSubject) {
-      stream.errorSubject.subscribe((error) => {
-        this.errorSubject.next({ stream: name, error });
-      });
-    }
-
-    this.subSets.add(stream.subscribe((next) => {
-      const nextMap = new Map(this.value);
-      nextMap.set(name, next);
-      return this.next(nextMap);
-    }, (error) => {
-      console.log('error:', error);
-      this.errorSubject.next({ stream: name, error, terminal: true });
-    }));
+  subscribeWhenComplete(...args) {
+    const sub = this._bufferedValues.subscribe(...args);
+    this.subSets.add(sub);
+    return sub;
   }
 
   addActions(obj) {
