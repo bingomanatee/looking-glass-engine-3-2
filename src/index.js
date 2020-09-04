@@ -1,6 +1,7 @@
 import { ABSENT } from './absent';
 import validators from './validators';
 import ValueStream from './ValueStream';
+import ValueStore from './ValueStore';
 import SubjectBlock from './SubjectBlock';
 import changeSubject from './changeSubject';
 import {
@@ -15,6 +16,7 @@ export default {
   STAGE_PROCESS,
   validators,
   ValueStream,
+  ValueStore,
   ABSENT,
   SubjectBlock,
   changeSubject,

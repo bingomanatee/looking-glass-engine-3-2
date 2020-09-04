@@ -39,7 +39,7 @@ tap.test(p.name, (suite) => {
     vs.test('error thrower', (basic) => {
       const stream = new ValueStream(1);
       stream.on({ action: ACTION_NEXT, stage: STAGE_BEGIN }, (change) => {
-        if (!(typeof (change.value.value) === 'number')) {
+        if (!(typeof (change.value) === 'number')) {
           change.error(new Error('not a number'));
         }
       });
@@ -52,7 +52,7 @@ tap.test(p.name, (suite) => {
       basic.same(stream.value, 1);
       basic.same(history, [1]);
       basic.same(errors, []);
-
+      stream.DEBUG = true;
       stream.next(3);
       basic.same(stream.value, 3);
       basic.same(history, [1, 3]);
@@ -74,14 +74,14 @@ tap.test(p.name, (suite) => {
     vs.test('number floor', (basic) => {
       const stream = new ValueStream(1);
       stream.on({ action: ACTION_NEXT, stage: STAGE_BEGIN }, (change) => {
-        if (!(typeof (change.value.value) === 'number')) {
+        if (!(typeof (change.value) === 'number')) {
           change.error(new Error('not a number'));
         }
       });
 
       stream.on({ action: ACTION_NEXT, stage: STAGE_PROCESS }, (change) => {
-        if (change.value.value !== Math.round(change.value.value)) {
-          change.next({ value: Math.floor(change.value.value) });
+        if (change.value !== Math.round(change.value)) {
+          change.next(Math.floor(change.value));
         }
       });
       const history = [];

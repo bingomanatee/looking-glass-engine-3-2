@@ -4,6 +4,7 @@ import {
 } from 'rxjs/operators';
 import { proppify } from '@wonderlandlabs/propper';
 
+import isEqual from 'lodash.isequal';
 import { isFunction, isObject } from './validators';
 import changeSubject from './changeSubject';
 import {
@@ -12,13 +13,12 @@ import {
 import { ABSENT, ID, isAbsent } from './absent';
 import uniq from './uniq';
 import flatten from './flatten';
+import pick from './pick';
 
 const changeKeys = (change) => ({
   action: change.value.action,
   stage: change.value.stage,
 });
-
-const compareChangeSigs = ({ action, stage }, prev) => (action === prev.action && stage === prev.stage);
 
 // after a value has changes
 
@@ -59,7 +59,7 @@ export default class ValueStream {
   }
 
   execute(action, value, stages = []) {
-    const change = changeSubject(action, value, STAGE_BEGIN);
+    const change = changeSubject(action, value);
     change.pipe(distinct(({ stage }) => stage))
       .subscribe(() => {
         this.eventSubject.next(change);
@@ -68,9 +68,8 @@ export default class ValueStream {
       });
 
     uniq([...stages, STAGE_COMPLETE]).forEach((stage) => {
-      if (!stage) return;
-      if (!change.isStopped) {
-        change.next({ ...change.value, stage });
+      if (stage && !change.isStopped) {
+        change.nextStage(stage);
       }
     });
 
@@ -90,7 +89,7 @@ export default class ValueStream {
 
   _watchForNext() {
     this.on({ action: ACTION_NEXT, stage: STAGE_COMPLETE }, (change) => {
-      this._valueSubject.next(change.value.value);
+      this._valueSubject.next(change.value);
       if (!change.hasError) {
         this.errorSubject.next(false);
       }
@@ -103,33 +102,31 @@ export default class ValueStream {
     }
     let selectedEvents;
     if (isObject(condition)) {
+      const keys = Array.from(Object.keys(condition));
       selectedEvents = this.eventSubject
         .pipe(filter((change) => {
           if (change.hasError) return false;
-          const filtered = Array.from(Object.keys(condition)).reduce(
-            (valid, name) => {
-              if (!valid) return false;
-              const target = condition[name];
-              const changeProp = change.value[name];
-              return target === changeProp;
-            }, true,
-          );
-          return filtered;
+          const matchingChangeValues = pick(change, keys);
+          return isEqual(matchingChangeValues, condition);
         }));
     } else if (isFunction(condition)) {
-      selectedEvents = this.eventSubject.pipe(filter(condition));
+      selectedEvents = this.eventSubject.pipe(filter(
+        (change) => !change.hasError,
+      ),
+      filter(condition));
+    } else {
+      throw new Error('on requires object or functional condition');
     }
-    if (selectedEvents) {
-      this.subSets.add(selectedEvents.subscribe((change) => {
-        try {
-          response(change);
-        } catch (error) {
-          console.log('on error:', error);
-          change.error(error);
-        }
-      }));
-    }
-    return this;
+
+    const sub = selectedEvents.subscribe((change) => {
+      try {
+        response(change);
+      } catch (error) {
+        change.error(error);
+      }
+    });
+    this.subSets.add(sub);
+    return sub;
   }
 
   _watchForActions() {
@@ -215,10 +212,32 @@ export default class ValueStream {
     return this;
   }
 
+  get _proxyHandler() {
+    return {
+      get(target, name, handler) {
+        return target.actions.get(name);
+      },
+    };
+  }
+
+  _updateDoNoProxy() {
+    this.do = {};
+    this.actions.forEach((action, name) => this.do[name] = action);
+  }
+
+  _updateDo() {
+    if (typeof Proxy === 'undefined') {
+      this._updateDoNoProxy();
+    }
+
+    if (!this.do) this.do = new Proxy(this, this._proxyHandler);
+  }
+
   action(name, fn, rewrite = false) {
     if ((!rewrite) && this.actions.has(name)) throw new Error(`cannot rename ${name}`);
     // @TODO- pipe through process, handle errors
     this.actions.set(name, (...args) => fn(this, ...args));
+    this._updateDo();
     return this;
   }
 
@@ -230,6 +249,12 @@ export default class ValueStream {
   get streams() {
     if (!this._streams) { this._streams = new Map(); }
     return this._streams;
+  }
+
+  complete() {
+    this.subSets.forEach(s => s.complete());
+    this._valueSubject.complete();
+    this._eventSubject.complete();
   }
 }
 

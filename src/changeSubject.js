@@ -1,32 +1,39 @@
 import { BehaviorSubject, combineLatest } from 'rxjs';
 import { map, distinctUntilChanged } from 'rxjs/operators';
-import isEqual from 'lodash.isequal';
 import { STAGE_BEGIN } from './constants';
-import pick from './pick';
 
-const ks = (props) => ({ value: props.value, stage: props.stage });
 class Change {
-  constructor(action, value, stage) {
-    this.action = action;
+  constructor(action, startValue, startStage = STAGE_BEGIN) {
+    this._action = action;
 
-    this.subject = new BehaviorSubject({ value, stage });
-    this.stream = this.subject
-      .pipe(distinctUntilChanged(isEqual, ks),
-        // eslint-disable-next-line no-shadow
-        map(({ value, stage }) => ({ value, stage, action: this.action })));
+    this.stageSubject = new BehaviorSubject(startStage);
+    this.subject = new BehaviorSubject(startValue);
+    this.stream = combineLatest([this.subject, this.stageSubject])
+      // eslint-disable-next-line arrow-body-style
+      .pipe(map(([value, stage]) => {
+        return ({ value, stage, action: this.action });
+      }));
   }
 
-  next(props) {
-    const next = { ...this.value, ...props };
-    this.subject.next(pick(next, ['value', 'stage']));
+  nextStage(value) {
+    this.stageSubject.next(value);
   }
 
-  get value() {
-    return { ...this.subject.value, action: this.action };
+  get action() {
+    return this._action;
+  }
+
+  get stage() {
+    return this.stageSubject.value;
+  }
+
+  complete() {
+    this.subject.complete();
+    this.stageSubject.complete();
   }
 }
 
-['isStopped', 'hasError', 'thrownError'].forEach((name) => {
+['isStopped', 'hasError', 'thrownError', 'value'].forEach((name) => {
   const propDef = {
     configurable: false,
     enumerable: true,
@@ -48,7 +55,7 @@ class Change {
   Object.defineProperty(Change.prototype, name, propDef);
 });
 
-['complete', 'error'].forEach((name) => {
+['error', 'next'].forEach((name) => {
   const propDef = {
     configurable: false,
     enumerable: false,

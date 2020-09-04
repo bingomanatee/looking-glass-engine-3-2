@@ -4,6 +4,7 @@ import {
   STAGE_PROCESS, STAGE_PENDING, ACTION_MAP_SET, STAGE_COMPLETE,
 } from './constants';
 import { isObject } from './validators';
+import upperFirst from './upperFirst';
 
 const _asMap = (initial) => {
   if (initial instanceof Map) return initial;
@@ -19,6 +20,18 @@ export default class ValueStore extends ValueStream {
   constructor(initial, ...props) {
     super(_asMap(initial), ...props);
     this._watchForMapSet();
+    this._initDos();
+  }
+
+  _initDos() {
+    console.log('initing do with ', this.value);
+    this.value.forEach((v, name) => {
+      const aName = `set${upperFirst(name)}`;
+      console.log('making action ', aName);
+      this.action(aName, (store, value) => { store.set(name, value); });
+    });
+
+    this._updateDo();
   }
 
   _watchForMapSet() {

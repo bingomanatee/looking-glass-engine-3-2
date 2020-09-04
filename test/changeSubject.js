@@ -17,9 +17,9 @@ tap.test(p.name, (suite) => {
       const change = changeSubject('simple', 1);
       const COMPLETE = Symbol('complete');
       const values = [];
-      csm.same(change.value.action, 'simple');
-      csm.same(change.value.value, 1);
-      csm.same(change.value.stage, STAGE_BEGIN);
+      csm.same(change.action, 'simple');
+      csm.same(change.value, 1);
+      csm.same(change.stage, STAGE_BEGIN);
       change.subscribe((v) => values.push(v), (e) => values.push(e.message), () => values.push(COMPLETE));
       csm.same(values, [{ value: 1, stage: STAGE_BEGIN, action: 'simple' }]);
 
@@ -33,9 +33,9 @@ tap.test(p.name, (suite) => {
       const change = changeSubject('simple', 1);
       const COMPLETE = Symbol('complete');
       const values = [];
-      csm.same(change.value.action, 'simple');
-      csm.same(change.value.value, 1);
-      csm.same(change.value.stage, STAGE_BEGIN);
+      csm.same(change.action, 'simple');
+      csm.same(change.value, 1);
+      csm.same(change.stage, STAGE_BEGIN);
       change.subscribe((v) => values.push(v), (e) => values.push(e.message), () => values.push(COMPLETE));
       csm.same(values, [{ value: 1, stage: STAGE_BEGIN, action: 'simple' }]);
       change.error(new Error('failure is always an option'));
@@ -48,33 +48,38 @@ tap.test(p.name, (suite) => {
       const COMPLETE = Symbol('complete');
       const values = [];
       change.subscribe((v) => values.push(v), (e) => values.push(e.message), () => values.push(COMPLETE));
-      change.next({ value: 2 });
+      change.next(2);
       const STAGE_FOO = Symbol('foo');
       const STAGE_BAR = Symbol('bar');
       csm.same(values, [
         { value: 1, stage: STAGE_BEGIN, action: 'simple' },
         { value: 2, stage: STAGE_BEGIN, action: 'simple' }]);
 
-      change.next({ stage: STAGE_FOO });
+      change.nextStage(STAGE_FOO);
       csm.same(values, [
         { value: 1, stage: STAGE_BEGIN, action: 'simple' },
         { value: 2, stage: STAGE_BEGIN, action: 'simple' },
         { value: 2, stage: STAGE_FOO, action: 'simple' },
       ]);
 
-      change.next({ stage: STAGE_BAR, value: 4 });
+      change.next(4);
+      change.nextStage(STAGE_BAR);
+
       csm.same(values, [
         { value: 1, stage: STAGE_BEGIN, action: 'simple' },
         { value: 2, stage: STAGE_BEGIN, action: 'simple' },
         { value: 2, stage: STAGE_FOO, action: 'simple' },
+        { value: 4, stage: STAGE_FOO, action: 'simple' },
         { value: 4, stage: STAGE_BAR, action: 'simple' },
       ]);
 
       change.complete();
+
       csm.same(values, [
         { value: 1, stage: STAGE_BEGIN, action: 'simple' },
         { value: 2, stage: STAGE_BEGIN, action: 'simple' },
         { value: 2, stage: STAGE_FOO, action: 'simple' },
+        { value: 4, stage: STAGE_FOO, action: 'simple' },
         { value: 4, stage: STAGE_BAR, action: 'simple' },
         COMPLETE,
       ]);
@@ -94,15 +99,16 @@ tap.test(p.name, (suite) => {
 
       csm.same(values, []);
 
-      change.next({ value: 2 });
+      change.next(2);
       csm.same(values, []);
 
-      change.next({ stage: STAGE_FOO });
+      change.nextStage(STAGE_FOO);
       csm.same(values, [
         { value: 2, stage: STAGE_FOO, action: 'simple' },
       ]);
 
-      change.next({ stage: STAGE_BAR, value: 4 });
+      change.nextStage(STAGE_BAR);
+      change.next(4);
       csm.same(values, [
         { value: 2, stage: STAGE_FOO, action: 'simple' },
       ]);
