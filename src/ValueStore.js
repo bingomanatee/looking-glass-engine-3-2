@@ -1,47 +1,64 @@
+import { proppify } from '@wonderlandlabs/propper';
 import ValueStream from './ValueStream';
 import { ABSENT, isAbsent } from './absent';
 import {
-  STAGE_PROCESS, STAGE_PENDING, ACTION_MAP_SET, STAGE_COMPLETE,
+  ACTION_MAP_SET, STAGE_COMPLETE, STAGE_PENDING, STAGE_PROCESS,
 } from './constants';
-import { isObject } from './validators';
 import upperFirst from './upperFirst';
+import asMap from './asMap';
+import { isArray, isString } from './validators';
+import lowerFirst from './lowerFirst';
 
-const _asMap = (initial) => {
-  if (initial instanceof Map) return initial;
-  if (initial && isObject(initial)) {
-    const map = new Map();
-    Object.keys(initial).forEach((name) => map.set(name, initial[name]));
-    return map;
+const SET_RE = /^set([\w].*)/;
+
+const changeIsSet = (change, store) => {
+  if (change.stage !== STAGE_PROCESS) return false;
+  if (store.actions.has(change.action)) {
+    return false;
   }
-  return new Map();
+  if (!isString(change.action)) return false;
+  const find = SET_RE.test(change.action);
+  console.log('changeIsSet: ', change.action, find);
+  return find;
 };
 
 export default class ValueStore extends ValueStream {
   constructor(initial, ...props) {
-    super(_asMap(initial), ...props);
+    super(asMap(initial), ...props);
     this._watchForMapSet();
-    this._initDos();
+    this._watchForKeySet();
   }
 
-  _initDos() {
-    console.log('initing do with ', this.value);
-    this.value.forEach((v, name) => {
-      const aName = `set${upperFirst(name)}`;
-      console.log('making action ', aName);
-      this.action(aName, (store, value) => { store.set(name, value); });
+  _updateDoNoProxy() {
+    super._updateDoNoProxy();
+    this.streams.forEach((stream, name) => {
+      const setKey = `set${upperFirst(name)}`;
+      this.do[setKey] = (...args) => {
+        this.execute(setKey, args);
+      };
     });
-
-    this._updateDo();
   }
 
   _watchForMapSet() {
     this.on({ action: ACTION_MAP_SET, stage: STAGE_COMPLETE }, (change) => {
       const { name, value } = change.value;
-      if (this.streams.has(name)) {
-        this.streams.next(value);
-      } else {
-        this._update(name, value);
-      }
+      this._setKeyValue(name, value);
+    });
+  }
+
+  _setKeyValue(name, value) {
+    if (this.streams.has(name)) {
+      this.streams.next(value);
+    } else if (this.value.has(name)) {
+      this._update(name, value);
+    }
+  }
+
+  _watchForKeySet() {
+    this.on(changeIsSet, (change) => {
+      const match = SET_RE.exec(change.action);
+      const keyName = lowerFirst(match[1]);
+      this._setKeyValue(keyName, change.value[0]);
     });
   }
 
@@ -82,3 +99,6 @@ export default class ValueStore extends ValueStream {
     return this;
   }
 }
+
+proppify(ValueStore)
+  .addProp('streams', () => new Map());

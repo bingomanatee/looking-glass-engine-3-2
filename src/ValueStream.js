@@ -5,7 +5,7 @@ import {
 import { proppify } from '@wonderlandlabs/propper';
 
 import isEqual from 'lodash.isequal';
-import { isFunction, isObject } from './validators';
+import { isArray, isFunction, isObject } from './validators';
 import changeSubject from './changeSubject';
 import {
   ACTION_NEXT, STAGE_BEGIN, STAGE_COMPLETE, STAGE_PENDING, STAGE_PERFORM, STAGE_PROCESS,
@@ -14,11 +14,23 @@ import { ABSENT, ID, isAbsent } from './absent';
 import uniq from './uniq';
 import flatten from './flatten';
 import pick from './pick';
+import asMap from './asMap';
+
+const BRACKETS = [STAGE_BEGIN, STAGE_COMPLETE];
+const DEFAULT_STAGES = [STAGE_BEGIN, STAGE_PROCESS, STAGE_PENDING, STAGE_COMPLETE];
+const DEAULT_STAGE_KEY = Symbol('default stages');
 
 const changeKeys = (change) => ({
   action: change.value.action,
   stage: change.value.stage,
 });
+
+const cleanStages = (list) => {
+  if (!isArray(list)) list = [];
+  let stages = list.filter((ele) => !BRACKETS.includes(ele));
+  stages = uniq(flatten([STAGE_BEGIN, stages, STAGE_PROCESS, STAGE_COMPLETE])).filter(ID);
+  return stages;
+};
 
 // after a value has changes
 
@@ -28,17 +40,33 @@ export default class ValueStream {
       (e) => console.log('----------- error: ', e)); */
     this._watchForNext();
     this._watchForActions();
+    this.extend(config);
+    this._initDos();
+    this.next(initial);
+  }
 
-    if (config && isObject(config)) {
-      if (config.actions) {
-        this.addActions(config.actions);
-      }
-      if (config.nextStages) {
-        this.nextStages = config.nextStages;
-      }
+  extend(config) {
+    if (!(config && isObject(config))) {
+      return this;
     }
 
-    this.next(initial);
+    const configMap = asMap(config);
+    if (configMap.has('actions')) {
+      this.addActions(configMap.get('actions'));
+    }
+    if (configMap.has('nextStages')) {
+      this.setStages(ACTION_NEXT, configMap.get('nextStages'));
+    }
+
+    if (configMap.has('defaultStages')) {
+      this.setDefaultStages(configMap.get('defaultStages'));
+    }
+
+    if (configMap.has('actionStages')) {
+      asMap(configMap.get('actionStages')).forEach((stages, action) => this.setStages(action, stages));
+    }
+
+    return this;
   }
 
   get bufferedSubject() {
@@ -58,7 +86,7 @@ export default class ValueStream {
     return this._bufferedSubject;
   }
 
-  execute(action, value, stages = []) {
+  execute(action, value, stages = ABSENT) {
     const change = changeSubject(action, value);
     change.pipe(distinct(({ stage }) => stage))
       .subscribe(() => {
@@ -67,7 +95,14 @@ export default class ValueStream {
         this.errorSubject.next(change);
       });
 
-    uniq([...stages, STAGE_COMPLETE]).forEach((stage) => {
+    let execStages = stages;
+    if (isAbsent(stages)) {
+      execStages = this.stagesFor(action);
+    } else {
+      execStages = cleanStages(stages);
+    }
+
+    execStages.forEach((stage) => {
       if (stage && !change.isStopped) {
         change.nextStage(stage);
       }
@@ -84,7 +119,7 @@ export default class ValueStream {
    * @param value
    */
   next(value) {
-    return this.execute(ACTION_NEXT, value, this.nextStages);
+    return this.execute(ACTION_NEXT, value);
   }
 
   _watchForNext() {
@@ -113,7 +148,7 @@ export default class ValueStream {
       selectedEvents = this.eventSubject.pipe(filter(
         (change) => !change.hasError,
       ),
-      filter(condition));
+      filter((change) => condition(change, this)));
     } else {
       throw new Error('on requires object or functional condition');
     }
@@ -130,42 +165,47 @@ export default class ValueStream {
   }
 
   _watchForActions() {
-    this.subSets.add(this.eventSubject.pipe(filter((change) => {
-      const { stage } = change.value;
-      return stage === STAGE_PERFORM;
-    }))
-      .subscribe((change) => {
-        if (!this.actions.has(change.value.action)) {
-          change.error(new Error(`no action named ${change.value.action}`));
-        } else {
-          try {
-            this.actions.get(change.value.action)(this, ...change.value.value);
-          } catch (err) {
-            change.error(err);
-          }
+    this.on({ stage: STAGE_PERFORM }, (change) => {
+      if (change.hasError) return;
+      if (this.actions.has(change.action)) {
+        try {
+          const args = isArray(change.value) ? change.value : [];
+          const output = this.actions.get(change.action)(this, ...args);
+          change.next(output);
+        } catch (err) {
+          change.error(err);
         }
-      }));
+      }
+    });
+  }
+
+  setDefaultStages(list) {
+    if (!isArray(list)) {
+      throw new Error('must be an array');
+    }
+    this.setStages(DEAULT_STAGE_KEY, list);
+    return this;
   }
 
   setNextStages(...stages) {
-    this.nextStages = uniq(flatten(stages));
+    this.setStages(ACTION_NEXT, stages);
     return this;
   }
 
-  valueToMap() {
-    if (!(this.value instanceof Map)) {
-      if (this.value && isObject(this.value)) {
-        const next = Array.from(Object.keys(this.value))
-          .reduce((memo, key) => {
-            memo.set(key, this.value[key]);
-            return memo;
-          }, new Map());
-        this.next(next);
-      } else {
-        this.next(new Map());
-      }
-    }
+  setStages(action, stages) {
+    this._stages.set(action, cleanStages(stages));
     return this;
+  }
+
+  stagesFor(action) {
+    if (this._stages.has(action)) {
+      return this._stages.get(action);
+    }
+
+    if (this._stages.has(DEAULT_STAGE_KEY)) {
+      return this._stages.get(DEAULT_STAGE_KEY);
+    }
+    return DEFAULT_STAGES;
   }
 
   // not currently employed
@@ -173,7 +213,7 @@ export default class ValueStream {
     if (!this.actions.has(name)) {
       throw new Error(`no action named ${name}`);
     }
-    return this.execute(name, args, [STAGE_PERFORM]);
+    return this.execute(name, args);
   }
 
   get value() {
@@ -215,19 +255,30 @@ export default class ValueStream {
   get _proxyHandler() {
     return {
       get(target, name, handler) {
-        return target.actions.get(name);
+        return (...args) => {
+          const change = target.execute(name, args);
+          if (change.hasError) {
+            throw change.thrownError;
+          }
+          return change.value;
+        };
       },
     };
   }
 
   _updateDoNoProxy() {
     this.do = {};
-    this.actions.forEach((action, name) => this.do[name] = action);
+    this.actions.forEach((action, name) => this.do[name] = (...args) => this.execute(name, args));
+  }
+
+  _initDos() {
+    this._updateDo();
   }
 
   _updateDo() {
     if (typeof Proxy === 'undefined') {
       this._updateDoNoProxy();
+      return;
     }
 
     if (!this.do) this.do = new Proxy(this, this._proxyHandler);
@@ -246,13 +297,8 @@ export default class ValueStream {
     return this._actions;
   }
 
-  get streams() {
-    if (!this._streams) { this._streams = new Map(); }
-    return this._streams;
-  }
-
   complete() {
-    this.subSets.forEach(s => s.complete());
+    this.subSets.forEach((s) => s.complete());
     this._valueSubject.complete();
     this._eventSubject.complete();
   }
@@ -260,8 +306,8 @@ export default class ValueStream {
 
 proppify(ValueStream)
   .addProp('subSets', () => (new Set()))
+  .addProp('_stages', () => new Map())
   .addProp('parent', null)// type restrict?
-  .addProp('nextStages', () => ([STAGE_PROCESS, STAGE_PENDING]))
   .addProp('eventSubject', () => new Subject())
   .addProp('errorSubject', () => new Subject())
   .addProp('_valueSubject', () => (new BehaviorSubject()));
