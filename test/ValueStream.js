@@ -36,6 +36,30 @@ tap.test(p.name, (suite) => {
       basic.end();
     });
 
+    vs.test('bufferedSubject', (basic) => {
+      const stream = new ValueStream(1);
+      const history = [];
+      const errors = [];
+      const bHistory = [];
+
+      stream._changePipe.subscribe((s) => bHistory.push(s.size));
+      stream.subscribe((value) => history.push(value));
+      stream.errorSubject.subscribe((change) => errors.push(change && change.thrownError.message));
+
+      basic.same(stream.value, 1);
+      basic.same(history, [1]);
+      basic.same(bHistory, [0]);
+      basic.same(errors, []);
+
+      stream.next(3);
+      basic.same(stream.value, 3);
+      basic.same(bHistory, [0, 1, 0]);
+      basic.same(history, [1, 3]);
+      basic.same(errors, [false]);
+
+      basic.end();
+    });
+
     vs.test('error thrower', (basic) => {
       const stream = new ValueStream(1);
       stream.on({ action: ACTION_NEXT, stage: STAGE_BEGIN }, (change) => {
@@ -52,7 +76,7 @@ tap.test(p.name, (suite) => {
       basic.same(stream.value, 1);
       basic.same(history, [1]);
       basic.same(errors, []);
-      stream.DEBUG = true;
+
       stream.next(3);
       basic.same(stream.value, 3);
       basic.same(history, [1, 3]);

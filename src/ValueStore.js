@@ -18,15 +18,21 @@ const changeIsSet = (change, store) => {
   }
   if (!isString(change.action)) return false;
   const find = SET_RE.test(change.action);
-  console.log('changeIsSet: ', change.action, find);
   return find;
 };
 
 export default class ValueStore extends ValueStream {
   constructor(initial, ...props) {
-    super(asMap(initial), ...props);
+    super(new Map(), ...props);
+    this._valueToStreams(initial);
     this._watchForMapSet();
     this._watchForKeySet();
+  }
+
+  _valueToStreams(initial) {
+    asMap(initial).forEach((value, name) => {
+      this.createStream(name, value);
+    });
   }
 
   _updateDoNoProxy() {
@@ -48,7 +54,7 @@ export default class ValueStore extends ValueStream {
 
   _setKeyValue(name, value) {
     if (this.streams.has(name)) {
-      this.streams.next(value);
+      this.streams.get(name).next(value);
     } else if (this.value.has(name)) {
       this._update(name, value);
     }
@@ -75,27 +81,22 @@ export default class ValueStore extends ValueStream {
     this.execute(ACTION_MAP_SET, { name, value }, [STAGE_PROCESS, STAGE_PENDING]);
   }
 
-  addStream(name, value = ABSENT, stream = null) {
+  addStream(name, stream) {
     if (this.streams.has(name)) {
-      throw new Error(`cannot redefine stream ${name}`);
+      this.streams.get(name).complete();
     }
-
-    if (isAbsent(value)) {
-      value = this.value.get(name) || null;
-    }
-
-    this.streams.set(name, stream || new ValueStream(value));
-
-    if (stream.errorSubject) {
-      stream.errorSubject.subscribe((error) => {
-        this.errorSubject.next({ stream: name, error });
-      });
-    }
-
     this.subSets.add(stream.subscribe((next) => {
       this._update(name, next);
     }));
+    this._update(name, stream.value);
+    this.streams.set(name, stream);
 
+    return this;
+  }
+
+  createStream(name, value) {
+    const stream = new ValueStream(value);
+    this.addStream(name, stream);
     return this;
   }
 }

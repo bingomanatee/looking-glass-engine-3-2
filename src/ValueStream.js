@@ -5,7 +5,9 @@ import {
 import { proppify } from '@wonderlandlabs/propper';
 
 import isEqual from 'lodash.isequal';
-import { isArray, isFunction, isObject } from './validators';
+import {
+  isArray, isFunction, isObject, isString,
+} from './validators';
 import changeSubject from './changeSubject';
 import {
   ACTION_NEXT, STAGE_BEGIN, STAGE_COMPLETE, STAGE_PENDING, STAGE_PERFORM, STAGE_PROCESS,
@@ -36,12 +38,9 @@ const cleanStages = (list) => {
 
 export default class ValueStream {
   constructor(initial = null, config = {}) {
-    /*   this.eventSubject.subscribe((c) => console.log('---------change: ', c.value),
-      (e) => console.log('----------- error: ', e)); */
+    this.extend(config);
     this._watchForNext();
     this._watchForActions();
-    this.extend(config);
-    this._initDos();
     this.next(initial);
   }
 
@@ -108,6 +107,10 @@ export default class ValueStream {
       }
     });
 
+    if (!change.isStopped) {
+      change.complete();
+    }
+
     return change;
   }
 
@@ -141,8 +144,26 @@ export default class ValueStream {
       selectedEvents = this.eventSubject
         .pipe(filter((change) => {
           if (change.hasError) return false;
-          const matchingChangeValues = pick(change, keys);
-          return isEqual(matchingChangeValues, condition);
+          return keys.reduce((match, key) => {
+            if (!match) return match;
+            const condValue = condition[key];
+            const changeValue = change[key];
+
+            if (isFunction(condValue)) {
+              return condValue(changeValue, change, this);
+            }
+            if (condValue instanceof RegExp) {
+              return isString(changeValue) && condValue.test(changeValue);
+            }
+            if (isArray(condValue)) {
+              return condValue.includes(changeValue);
+            }
+            if (isObject(condValue)) {
+              return isEqual(condValue, changeValue);
+            }
+
+            return condValue === changeValue;
+          }, true);
         }));
     } else if (isFunction(condition)) {
       selectedEvents = this.eventSubject.pipe(filter(
@@ -165,16 +186,19 @@ export default class ValueStream {
   }
 
   _watchForActions() {
-    this.on({ stage: STAGE_PERFORM }, (change) => {
+    this.on((change, store) => {
+      const isPerform = (change.stage === STAGE_PROCESS);
+      const matchedAction = store.actions.has(change.action);
+      const out = isPerform && matchedAction;
+      return out;
+    }, (change) => {
       if (change.hasError) return;
-      if (this.actions.has(change.action)) {
-        try {
-          const args = isArray(change.value) ? change.value : [];
-          const output = this.actions.get(change.action)(this, ...args);
-          change.next(output);
-        } catch (err) {
-          change.error(err);
-        }
+      const args = isArray(change.value) ? change.value : [];
+      try {
+        const output = this.actions.get(change.action)(...args);
+        change.next(output);
+      } catch (err) {
+        change.error(err);
       }
     });
   }
@@ -208,20 +232,45 @@ export default class ValueStream {
     return DEFAULT_STAGES;
   }
 
-  // not currently employed
-  doAction(name, ...args) {
-    if (!this.actions.has(name)) {
-      throw new Error(`no action named ${name}`);
-    }
-    return this.execute(name, args);
-  }
-
   get value() {
     return this._valueSubject.value;
   }
 
+  get _changePipe() {
+    if (!this.__changePipe) {
+      let changeSet = new Set();
+      this.__changePipe = new BehaviorSubject(changeSet);
+      this.on({ stage: STAGE_BEGIN }, (change) => {
+        if (!changeSet.has(change)) {
+          changeSet = new Set(changeSet);
+          changeSet.add(change);
+          this.__changePipe.next(changeSet);
+
+          const unsub = () => {
+            changeSet = new Set(changeSet);
+            changeSet.delete(change);
+            this.__changePipe.next(changeSet);
+          };
+          change.subscribe(ID, unsub, unsub);
+        }
+      });
+    }
+    return this.__changePipe;
+  }
+
+  get _changePipedValueSubject() {
+    if (!this.__distinctSubject) {
+      this.__distinctSubject = combineLatest(this._valueSubject, this._changePipe)
+        .pipe(
+          filter(([__, pending]) => pending.size === 0),
+          map(([value]) => value),
+        );
+    }
+    return this.__distinctSubject;
+  }
+
   subscribe(...args) {
-    const sub = this._valueSubject.subscribe(...args);
+    const sub = this._changePipedValueSubject.subscribe(...args);
     this.subSets.add(sub);
     return sub;
   }
@@ -236,7 +285,7 @@ export default class ValueStream {
   }
 
   subscribeWhenComplete(...args) {
-    const sub = this._bufferedValues.subscribe(...args);
+    const sub = this._changePipedValueSubject.subscribe(...args);
     this.subSets.add(sub);
     return sub;
   }
@@ -247,7 +296,17 @@ export default class ValueStream {
     }
 
     Object.keys(obj).forEach((name) => {
-      this.action(name, obj[name]);
+      const def = obj[name];
+      if (isArray(def)) {
+        if (isFunction(def[0])) {
+          this.action(name, ...def);
+          return;
+        }
+      } else if (isFunction(def)) {
+        this.action(name, def);
+        return;
+      }
+      console.log('bad action definition:', name, def);
     });
     return this;
   }
@@ -267,27 +326,34 @@ export default class ValueStream {
   }
 
   _updateDoNoProxy() {
-    this.do = {};
-    this.actions.forEach((action, name) => this.do[name] = (...args) => this.execute(name, args));
+    this._do = {};
+    this.actions.forEach((action, name) => this._do[name] = (...args) => this.execute(name, args));
   }
 
-  _initDos() {
-    this._updateDo();
+  get do() {
+    if (!this._do) {
+      this._updateDo(true);
+    }
+    return this._do;
   }
 
-  _updateDo() {
+  _updateDo(upsert) {
     if (typeof Proxy === 'undefined') {
-      this._updateDoNoProxy();
+      this._updateDoNoProxy(upsert);
       return;
     }
-
-    if (!this.do) this.do = new Proxy(this, this._proxyHandler);
+    if (!this._do) {
+      this._do = new Proxy(this, this._proxyHandler);
+    }
   }
 
-  action(name, fn, rewrite = false) {
-    if ((!rewrite) && this.actions.has(name)) throw new Error(`cannot rename ${name}`);
-    // @TODO- pipe through process, handle errors
+  action(name, fn, stages = ABSENT) {
+    if (this.actions.has(name)) throw new Error(`cannot rename ${name}`);
+
     this.actions.set(name, (...args) => fn(this, ...args));
+    if (isArray(stages)) {
+      this.setStages(name, stages);
+    }
     this._updateDo();
     return this;
   }
