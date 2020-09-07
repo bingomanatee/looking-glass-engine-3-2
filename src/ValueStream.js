@@ -195,8 +195,7 @@ export default class ValueStream {
       if (change.hasError) return;
       const args = isArray(change.value) ? change.value : [];
       try {
-        const output = this.actions.get(change.action)(...args);
-        change.next(output);
+        change.output = this.actions.get(change.action)(...args);
       } catch (err) {
         change.error(err);
       }
@@ -304,7 +303,7 @@ export default class ValueStream {
           if (change.hasError) {
             throw change.thrownError;
           }
-          return change.value;
+          return change.output;
         };
       },
     };

@@ -13,6 +13,7 @@ class Change {
       .pipe(map(([value, stage]) => {
         return ({ value, stage, action: this.action });
       }));
+    this.output = null;
   }
 
   nextStage(value) {
