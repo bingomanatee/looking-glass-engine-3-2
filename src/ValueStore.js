@@ -81,6 +81,37 @@ export default class ValueStore extends ValueStream {
     this.execute(ACTION_MAP_SET, { name, value }, [STAGE_PROCESS, STAGE_PENDING]);
   }
 
+  get(name) {
+    return this.value.get(name);
+  }
+
+  get my() {
+    if (typeof Proxy === 'undefined') {
+      return this.asObject();
+    }
+    if (!this._my) {
+      this._my = Proxy({
+        get(target, name) {
+          return target.get(name);
+        },
+      });
+    }
+
+    return this._my;
+  }
+
+  asObject() {
+    const out = {};
+    this.value.forEach((value, name) => {
+      try {
+        out[name] = value;
+      } catch (err) {
+
+      }
+    });
+    return out;
+  }
+
   addStream(name, stream) {
     if (this.streams.has(name)) {
       this.streams.get(name).complete();

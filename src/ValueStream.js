@@ -275,21 +275,6 @@ export default class ValueStream {
     return sub;
   }
 
-  get _bufferedValues() {
-    if (!this.__bufferedValues) {
-      this.__bufferedValues = combineLatest(this.bufferedSubject, this._valueSubject)
-        .pipe(filter(([count]) => count < 1),
-          map(([_, v]) => v));
-    }
-    return this.__bufferedValues;
-  }
-
-  subscribeWhenComplete(...args) {
-    const sub = this._changePipedValueSubject.subscribe(...args);
-    this.subSets.add(sub);
-    return sub;
-  }
-
   addActions(obj) {
     if (!isObject(obj)) {
       throw new Error('non-obj set to addActions');

@@ -88,8 +88,6 @@ tap.test(p.name, (suite) => {
     });
 
     vs.test('nested Stores', (ns) => {
-      console.log('------------ nexted streams ----------');
-
       function formField(name, value, test) {
         const store = new ValueStore({ value, errorMessage: '', touched: false });
 
