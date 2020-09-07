@@ -257,7 +257,7 @@ export default class ValueStream {
     return this.__changePipe;
   }
 
-  get _changePipedValueSubject() {
+  get changeSubject() {
     if (!this.__distinctSubject) {
       this.__distinctSubject = combineLatest(this._valueSubject, this._changePipe)
         .pipe(
@@ -269,7 +269,7 @@ export default class ValueStream {
   }
 
   subscribe(...args) {
-    const sub = this._changePipedValueSubject.subscribe(...args);
+    const sub = this.changeSubject.subscribe(...args);
     this.subSets.add(sub);
     return sub;
   }
