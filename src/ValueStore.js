@@ -69,13 +69,6 @@ export default class ValueStore extends ValueStream {
     });
   }
 
-  _watchForMapSet() {
-    this.on({ action: ACTION_MAP_SET, stage: STAGE_COMPLETE }, (change) => {
-      const { name, value } = change.value;
-      this._setKeyValue(name, value);
-    });
-  }
-
   _setKeyValue(name, value) {
     if (this.streams.has(name)) {
       this.streams.get(name).next(value);
@@ -88,7 +81,20 @@ export default class ValueStore extends ValueStream {
     this.on(changeIsSet, (change) => {
       const match = SET_RE.exec(change.action);
       const keyName = lowerFirst(match[1]);
-      this._setKeyValue(keyName, change.value[0]);
+      this.set(keyName, change.value[0]);
+    });
+  }
+
+  set(name, value) {
+    if (this.streams.has(name)) {
+      this.streams.get(name).next(value);
+    } else this.execute(ACTION_MAP_SET, { name, value }, [STAGE_PROCESS, STAGE_PENDING]);
+  }
+
+  _watchForMapSet() {
+    this.on({ action: ACTION_MAP_SET, stage: STAGE_COMPLETE }, (change) => {
+      const { name, value } = change.value;
+      this._update(name, value);
     });
   }
 
@@ -96,13 +102,6 @@ export default class ValueStore extends ValueStream {
     const nextMap = new Map(this.value);
     nextMap.set(name, value);
     return this.next(nextMap);
-  }
-
-  set(name, value) {
-    if (this.streams.has(name)) {
-      this.streams.get(name).next(value);
-    }
-    this.execute(ACTION_MAP_SET, { name, value }, [STAGE_PROCESS, STAGE_PENDING]);
   }
 
   get(name) {
