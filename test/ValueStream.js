@@ -136,6 +136,43 @@ tap.test(p.name, (suite) => {
       basic.end();
     });
 
+    vs.test('filter', (basic) => {
+      const stream = new ValueStream(1);
+      stream.filter((value) => {
+        if (!(typeof (value) === 'number')) {
+          throw (new Error('not a number'));
+        }
+        return Math.floor(value);
+      });
+
+      const history = [];
+      const errors = [];
+
+      stream.subscribe((value) => history.push(value));
+      stream.errorSubject.subscribe((change) => errors.push(change && change.thrownError.message));
+
+      basic.same(stream.value, 1);
+      basic.same(history, [1]);
+      basic.same(errors, []);
+
+      stream.next(3);
+      basic.same(stream.value, 3);
+      basic.same(history, [1, 3]);
+      basic.same(errors, [false]);
+
+      stream.next('four');
+      basic.same(stream.value, 3);
+      basic.same(history, [1, 3]);
+      basic.same(errors, [false, 'not a number']);
+
+      stream.next(5.5);
+      basic.same(stream.value, 5);
+      basic.same(history, [1, 3, 5]);
+      basic.same(errors, [false, 'not a number', false]);
+
+      basic.end();
+    });
+
     vs.end();
   });
 

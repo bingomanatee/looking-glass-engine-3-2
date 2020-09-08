@@ -1,22 +1,23 @@
-import { BehaviorSubject, Subject, combineLatest } from 'rxjs';
+import {BehaviorSubject, Subject, combineLatest} from 'rxjs';
 import {
   distinct, distinctUntilChanged, filter, map,
 } from 'rxjs/operators';
-import { proppify } from '@wonderlandlabs/propper';
+import {proppify} from '@wonderlandlabs/propper';
 
 import isEqual from 'lodash.isequal';
 import {
   isArray, isFunction, isObject, isString,
 } from './validators';
-import changeSubject from './changeSubject';
+
 import {
   ACTION_NEXT, STAGE_BEGIN, STAGE_COMPLETE, STAGE_PENDING, STAGE_PERFORM, STAGE_PROCESS,
 } from './constants';
-import { ABSENT, ID, isAbsent } from './absent';
+import {ABSENT, ID, isAbsent} from './absent';
 import uniq from './uniq';
 import flatten from './flatten';
 import pick from './pick';
 import asMap from './asMap';
+import Change from "./Change";
 
 const BRACKETS = [STAGE_BEGIN, STAGE_COMPLETE];
 const DEFAULT_STAGES = [STAGE_BEGIN, STAGE_PROCESS, STAGE_PENDING, STAGE_COMPLETE];
@@ -68,25 +69,8 @@ export default class ValueStream {
     return this;
   }
 
-  get bufferedSubject() {
-    if (!this._bufferedSubject) {
-      const changeSet = new Set();
-      this._bufferedSubject = new BehaviorSubject(0);
-
-      this.eventSubject.subscribe((change) => {
-        if (!changeSet.has(change)) {
-          changeSet.add(change);
-          this._bufferedSubject.next(changeSet.size);
-          const purgeChange = () => changeSet.remove(change);
-          change.subscribe(ID, purgeChange, purgeChange);
-        }
-      });
-    }
-    return this._bufferedSubject;
-  }
-
   execute(action, value, stages = ABSENT) {
-    const change = changeSubject(action, value);
+    const change = new Change(this, action, value);
     change.pipe(distinct(({ stage }) => stage))
       .subscribe(() => {
         this.eventSubject.next(change);
@@ -126,7 +110,7 @@ export default class ValueStream {
   }
 
   _watchForNext() {
-    this.on({ action: ACTION_NEXT, stage: STAGE_COMPLETE }, (change) => {
+    this.on({action: ACTION_NEXT, stage: STAGE_COMPLETE}, (change) => {
       this._valueSubject.next(change.value);
       if (!change.hasError) {
         this.errorSubject.next(false);
@@ -168,8 +152,8 @@ export default class ValueStream {
     } else if (isFunction(condition)) {
       selectedEvents = this.eventSubject.pipe(filter(
         (change) => !change.hasError,
-      ),
-      filter((change) => condition(change, this)));
+        ),
+        filter((change) => condition(change, this)));
     } else {
       throw new Error('on requires object or functional condition');
     }
@@ -239,7 +223,7 @@ export default class ValueStream {
     if (!this.__changePipe) {
       let changeSet = new Set();
       this.__changePipe = new BehaviorSubject(changeSet);
-      this.on({ stage: STAGE_BEGIN }, (change) => {
+      this.on({stage: STAGE_BEGIN}, (change) => {
         if (!changeSet.has(change)) {
           changeSet = new Set(changeSet);
           changeSet.add(change);
@@ -255,6 +239,13 @@ export default class ValueStream {
       });
     }
     return this.__changePipe;
+  }
+
+  filter(fn) {
+    this.on({action: ACTION_NEXT, stage: STAGE_BEGIN}, (change) => {
+      change.next(fn(change.value, this));
+    });
+    return this;
   }
 
   get changeSubject() {
@@ -297,7 +288,7 @@ export default class ValueStream {
 
   get _proxyHandler() {
     return {
-      get(target, name, handler) {
+      get(target, name) {
         return (...args) => {
           const change = target.execute(name, args);
           if (change.hasError) {
@@ -343,7 +334,9 @@ export default class ValueStream {
   }
 
   get actions() {
-    if (!this._actions) { this._actions = new Map(); }
+    if (!this._actions) {
+      this._actions = new Map();
+    }
     return this._actions;
   }
 

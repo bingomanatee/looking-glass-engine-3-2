@@ -191,10 +191,85 @@ tap.test(p.name, (suite) => {
         [
           STEP_ONE,
           STEP_TWO,
-          STEP_THREE
+          STEP_THREE,
         ]);
 
       ns.end();
+    });
+
+    vs.test('watch', (w) => {
+      const store = new ValueStore({ x: 0, y: 0, z: 0 });
+      const history = [];
+      const watchHistory = [];
+
+      store.watch('x', 'y').subscribe((values) => {
+        console.log('watched values:', values);
+        watchHistory.push(Math.floor(Math.sqrt(values.get('x') ** 2 + values.get('y') ** 2)));
+      });
+
+      store.subscribe((value) => history.push(value));
+      const STAGE_ONE = new Map([['x', 0], ['y', 0], ['z', 0]]);
+      const STAGE_TWO = new Map([['x', 10], ['y', 0], ['z', 0]]);
+      const STAGE_THREE = new Map([['x', 10], ['y', 20], ['z', 0]]);
+      const STAGE_FOUR = new Map([['x', 10], ['y', 20], ['z', 30]]);
+
+      w.same(history, [STAGE_ONE]);
+      w.same(watchHistory, [0]);
+
+      store.do.setX(10);
+
+      w.same(history, [STAGE_ONE, STAGE_TWO]);
+      w.same(watchHistory, [0, 10]);
+
+      w.same(history, [STAGE_ONE, STAGE_TWO]);
+      w.same(watchHistory, [0, 10]);
+
+      store.do.setY(20);
+      w.same(history, [STAGE_ONE, STAGE_TWO, STAGE_THREE]);
+      w.same(watchHistory, [0, 10, 22]);
+
+      store.do.setZ(30);
+      w.same(history, [STAGE_ONE, STAGE_TWO, STAGE_THREE, STAGE_FOUR]);
+      w.same(watchHistory, [0, 10, 22]);
+
+      w.end();
+    });
+
+    vs.test('filter', (w) => {
+      const store = new ValueStore({ x: 0, y: 0, z: 0 });
+      const history = [];
+      const watchHistory = [];
+
+      store.watch('x', 'y').subscribe((values) => {
+        watchHistory.push(Math.floor(Math.sqrt(values.get('x') ** 2 + values.get('y') ** 2)));
+      });
+
+      store.subscribe((value) => history.push(value));
+      const STEP_ONE = new Map([['x', 0], ['y', 0], ['z', 0]]);
+      const STAGE_TWO = new Map([['x', 10], ['y', 0], ['z', 0]]);
+      const STEP_THREE = new Map([['x', 10], ['y', 20], ['z', 0]]);
+      const STEP_FOUR = new Map([['x', 10], ['y', 20], ['z', 30]]);
+
+      w.same(history, [STEP_ONE]);
+      w.same(watchHistory, [0]);
+
+      store.do.setX(10);
+
+      w.same(history, [STEP_ONE, STAGE_TWO]);
+      w.same(watchHistory, [0, 10]);
+
+      w.same(history, [STEP_ONE, STAGE_TWO]);
+      w.same(watchHistory, [0, 10]);
+
+      store.do.setY(20);
+      w.same(history, [STEP_ONE, STAGE_TWO, STEP_THREE]);
+      w.same(watchHistory, [0, 10, 22]);
+
+      store.do.setZ(30);
+      w.same(history, [STEP_ONE, STAGE_TWO, STEP_THREE, STEP_FOUR]);
+      w.same(watchHistory, [0, 10, 22]);
+
+      w.end();
     });
 
     vs.end();

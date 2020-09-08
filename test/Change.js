@@ -2,7 +2,7 @@
 const tap = require('tap');
 const { filter } = require('rxjs/operators');
 const p = require('../package.json');
-const { changeSubject, STAGE_BEGIN } = require('../lib');
+const { Change, STAGE_BEGIN } = require('../lib');
 
 // const positive = new Meta((a) => (a >= 0 ? false : 'must be > 0'), 'positive', 1);
 
@@ -10,6 +10,8 @@ const { changeSubject, STAGE_BEGIN } = require('../lib');
  *  testing basic name, value, deserialization
  *
  */
+
+const changeSubject = (...params) => new Change({}, ...params);
 
 tap.test(p.name, (suite) => {
   suite.test('changeSubject', (cs) => {

@@ -3,7 +3,7 @@ import validators from './validators';
 import ValueStream from './ValueStream';
 import ValueStore from './ValueStore';
 import SubjectBlock from './SubjectBlock';
-import changeSubject from './changeSubject';
+import Change from './Change';
 import {
   STAGE_PERFORM, STAGE_PENDING, STAGE_COMPLETE, STAGE_BEGIN, STAGE_PROCESS,
 } from './constants';
@@ -19,5 +19,5 @@ export default {
   ValueStore,
   ABSENT,
   SubjectBlock,
-  changeSubject,
+  Change,
 };

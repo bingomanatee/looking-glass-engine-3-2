@@ -1,13 +1,17 @@
 import { proppify } from '@wonderlandlabs/propper';
+import { combineLatest } from 'rxjs';
+import { map } from 'rxjs/operators';
 import ValueStream from './ValueStream';
+
 import { ABSENT, isAbsent } from './absent';
 import {
-  ACTION_MAP_SET, STAGE_COMPLETE, STAGE_PENDING, STAGE_PROCESS,
+  ACTION_MAP_SET, ACTION_NEXT, STAGE_BEGIN, STAGE_COMPLETE, STAGE_PENDING, STAGE_PROCESS,
 } from './constants';
 import upperFirst from './upperFirst';
 import asMap from './asMap';
 import { isArray, isString } from './validators';
 import lowerFirst from './lowerFirst';
+import flatten from './flatten';
 
 const SET_RE = /^set([\w].*)/;
 
@@ -27,6 +31,26 @@ export default class ValueStore extends ValueStream {
     this._valueToStreams(initial);
     this._watchForMapSet();
     this._watchForKeySet();
+  }
+
+  watch(...args) {
+    const names = flatten(args).filter((name) => this.streams.has(name));
+    const streams = names.map((name) => this.streams.get(name).changeSubject);
+    return combineLatest(streams)
+      .pipe(
+        map((values) => {
+          const m = new Map();
+          names.forEach((name, i) => {
+            m.set(name, values[i]);
+          });
+          return m;
+        }),
+      );
+  }
+
+  filterStream(name, fn) {
+    this.streams.get(name).filter(fn);
+    return this;
   }
 
   _valueToStreams(initial) {

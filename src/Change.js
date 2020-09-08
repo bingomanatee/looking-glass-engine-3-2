@@ -1,60 +1,70 @@
-import { proppify } from '@wonderlandlabs/propper';
-import { nanoid }               from 'nanoid';
-import { ABSENT, ID, isAbsent } from './absent';
-import flatten                  from './flatten';
-import { isArray } from './validators';
-import pick from './pick';
+import { BehaviorSubject, combineLatest } from 'rxjs';
+import { map } from 'rxjs/operators';
+import { STAGE_BEGIN } from './constants';
 
-export default class Change {
-  constructor(stream, next, last = ABSENT) {
-    this.value = next;
-    this.nextValue = next;
-    this.lastValue = isAbsent(last) ? stream.value : last;
-    this.stream = stream;
-    this.id = `change_${nanoid()}`;
+class Change {
+  constructor(target, action, startValue, startStage = STAGE_BEGIN) {
+    this._action = action;
+    this.target = target;
+    this.stageSubject = new BehaviorSubject(startStage);
+    this.subject = new BehaviorSubject(startValue);
+    this.stream = combineLatest([this.subject, this.stageSubject])
+      // eslint-disable-next-line arrow-body-style
+      .pipe(map(([value, stage]) => {
+        return ({ value, stage, action: this.action });
+      }));
+    this.output = null;
   }
 
-  get redundant() {
-    return !this.stream._compare(this.stream.value, this.nextValue);
+  nextStage(value) {
+    this.stageSubject.next(value);
   }
 
-  get name() {
-    return this.stream.name;
+  get action() {
+    return this._action;
   }
 
-  toJSON(id) {
-    const out = {
-      id: id || this.id,
-      value: this.value,
-      lastValue: this.lastValue,
-    };
-
-    if (!isAbsent(this.nextValue)) {
-      out.nextValue = this.nextValue;
-    }
-    if (!isAbsent(this.lastValue)) {
-      out.lastValue = this.lastValue;
-    }
-    if (this.thrown) {
-      out.thrown = this.thrown.message ? this.thrown.message : this.thrown;
-      out.thrownAt = this.thrownAt;
-    }
-    if (this.stream.errors.length) out.errors = [...this.stream.errors];
-    if ((this.stream.notes && !isArray(this.stream.notes)) || (isArray(this.stream.notes) && this.stream.notes.length)) out.notes = this.stream.notes;
-    return out;
+  get stage() {
+    return this.stageSubject.value;
   }
 
-  get thrownString() {
-    return this.thrown.reduce((s, e) => [...s, e.message], [])
-      .join(',');
+  complete() {
+    this.subject.complete();
+    this.stageSubject.complete();
   }
 }
 
-proppify(Change)
-  .addProp('stream')
-  .addProp('value')
-  .addProp('thrown')
-  .addProp('thrownAt', '', 'string')
-  .addProp('nextValue', ABSENT)
-  .addProp('lastValue')
-  .addProp('notes');
+['isStopped', 'hasError', 'thrownError', 'value'].forEach((name) => {
+  const propDef = {
+    configurable: false,
+    enumerable: true,
+    get() {
+      return this.subject[name];
+    },
+  };
+  Object.defineProperty(Change.prototype, name, propDef);
+});
+
+['subscribe', 'pipe'].forEach((name) => {
+  const propDef = {
+    configurable: false,
+    enumerable: false,
+    get() {
+      return (...args) => this.stream[name](...args);
+    },
+  };
+  Object.defineProperty(Change.prototype, name, propDef);
+});
+
+['error', 'next'].forEach((name) => {
+  const propDef = {
+    configurable: false,
+    enumerable: false,
+    get() {
+      return (...args) => this.subject[name](...args);
+    },
+  };
+  Object.defineProperty(Change.prototype, name, propDef);
+});
+
+export default Change;
