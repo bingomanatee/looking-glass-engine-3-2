@@ -10,6 +10,7 @@ import {
 } from './validators';
 
 import {
+  ACTION_MAP_SET,
   ACTION_NEXT, STAGE_BEGIN, STAGE_COMPLETE, STAGE_PENDING, STAGE_PERFORM, STAGE_PROCESS,
 } from './constants';
 import { ABSENT, ID, isAbsent } from './absent';
@@ -21,12 +22,8 @@ import Change from './Change';
 
 const BRACKETS = [STAGE_BEGIN, STAGE_COMPLETE];
 const DEFAULT_STAGES = [STAGE_BEGIN, STAGE_PROCESS, STAGE_PENDING, STAGE_COMPLETE];
-const DEAULT_STAGE_KEY = Symbol('default stages');
-
-const changeKeys = (change) => ({
-  action: change.value.action,
-  stage: change.value.stage,
-});
+const DEFAULT_STAGE_KEY = Symbol('default stages');
+const ACTION_MAP_SET_STAGES = DEFAULT_STAGES;
 
 const cleanStages = (list) => {
   if (!isArray(list)) list = [];
@@ -190,7 +187,7 @@ export default class ValueStream {
     if (!isArray(list)) {
       throw new Error('must be an array');
     }
-    this.setStages(DEAULT_STAGE_KEY, list);
+    this.setStages(DEFAULT_STAGE_KEY, list);
     return this;
   }
 
@@ -205,12 +202,13 @@ export default class ValueStream {
   }
 
   stagesFor(action) {
+    if (action === ACTION_MAP_SET) return ACTION_MAP_SET_STAGES;
     if (this._stages.has(action)) {
       return this._stages.get(action);
     }
 
-    if (this._stages.has(DEAULT_STAGE_KEY)) {
-      return this._stages.get(DEAULT_STAGE_KEY);
+    if (this._stages.has(DEFAULT_STAGE_KEY)) {
+      return this._stages.get(DEFAULT_STAGE_KEY);
     }
     return DEFAULT_STAGES;
   }

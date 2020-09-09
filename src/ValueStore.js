@@ -1,9 +1,10 @@
 import { proppify } from '@wonderlandlabs/propper';
-import { combineLatest } from 'rxjs';
+import { BehaviorSubject, combineLatest, distinctUntilChanged } from 'rxjs';
 import { map } from 'rxjs/operators';
+import isEqual from 'lodash.isequal';
 import ValueStream from './ValueStream';
 
-import { ABSENT, isAbsent } from './absent';
+import { ABSENT, ID, isAbsent } from './absent';
 import {
   ACTION_MAP_SET, ACTION_NEXT, STAGE_BEGIN, STAGE_COMPLETE, STAGE_PENDING, STAGE_PROCESS,
 } from './constants';
@@ -12,6 +13,7 @@ import asMap from './asMap';
 import { isArray, isString } from './validators';
 import lowerFirst from './lowerFirst';
 import flatten from './flatten';
+import uniq from './uniq';
 
 const SET_RE = /^set([\w].*)/;
 
@@ -26,8 +28,8 @@ const changeIsSet = (change, store) => {
 };
 
 export default class ValueStore extends ValueStream {
-  constructor(initial, ...props) {
-    super(new Map(), ...props);
+  constructor(initial, config, ...props) {
+    super(asMap(initial), config, ...props);
     this._valueToStreams(initial);
     this._watchForMapSet();
     this._watchForKeySet();
@@ -35,7 +37,7 @@ export default class ValueStore extends ValueStream {
 
   watch(...args) {
     const names = flatten(args).filter((name) => this.streams.has(name));
-    const streams = names.map((name) => this.streams.get(name).changeSubject);
+    const streams = names.map((name) => this.streams.get(name));
     return combineLatest(streams)
       .pipe(
         map((values) => {
@@ -69,14 +71,6 @@ export default class ValueStore extends ValueStream {
     });
   }
 
-  _setKeyValue(name, value) {
-    if (this.streams.has(name)) {
-      this.streams.get(name).next(value);
-    } else if (this.value.has(name)) {
-      this._update(name, value);
-    }
-  }
-
   _watchForKeySet() {
     this.on(changeIsSet, (change) => {
       const match = SET_RE.exec(change.action);
@@ -86,12 +80,18 @@ export default class ValueStore extends ValueStream {
   }
 
   set(name, value) {
-    if (this.streams.has(name)) {
-      this.streams.get(name).next(value);
-    } else this.execute(ACTION_MAP_SET, { name, value }, [STAGE_PROCESS, STAGE_PENDING]);
+    this.execute(ACTION_MAP_SET, { name, value }, [STAGE_PROCESS, STAGE_PENDING]);
   }
 
   _watchForMapSet() {
+    // pipe all pending map sets to stream is they exist.
+    this.on({ action: ACTION_MAP_SET, stage: STAGE_PENDING }, (change) => {
+      const { name, value } = change.value;
+      if (this.streams.has(name)) {
+        this.streams.get(name).next(value);
+        change.complete();
+      }
+    });
     this.on({ action: ACTION_MAP_SET, stage: STAGE_COMPLETE }, (change) => {
       const { name, value } = change.value;
       this._update(name, value);
@@ -113,7 +113,7 @@ export default class ValueStore extends ValueStream {
       return this.asObject();
     }
     if (!this._my) {
-      this._my = Proxy({
+      this._my = new Proxy(this,{
         get(target, name) {
           return target.get(name);
         },
@@ -142,14 +142,14 @@ export default class ValueStore extends ValueStream {
     this.subSets.add(stream.subscribe((next) => {
       this._update(name, next);
     }));
-    this._update(name, stream.value);
     this.streams.set(name, stream);
+    this.set(name, this.my[name]);
 
     return this;
   }
 
   createStream(name, value) {
-    const stream = new ValueStream(value);
+    const stream = new BehaviorSubject(value);
     this.addStream(name, stream);
     return this;
   }

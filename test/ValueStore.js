@@ -89,15 +89,23 @@ tap.test(p.name, (suite) => {
 
     vs.test('nested Stores', (ns) => {
       function formField(name, value, test) {
-        const store = new ValueStore({ value, errorMessage: '', touched: false });
-
-        store.streams.get('value').on({ action: ACTION_NEXT, stage: STAGE_COMPLETE },
-          (change) => {
+        const store = new ValueStore({ value, errorMessage: '', touched: false }, {
+          actions: {
+            reset(store) {
+              store.do.setTouched(false);
+              store.do.setErrorMessage('');
+            }
+          }
+        });
+        store.streams.get('value').subscribe(
+          (next) => {
             if (!store.value.get('touched')) {
               store.set('touched', true);
             }
-            store.do.setErrorMessage(test(change.value) || '');
-          });
+            store.do.setErrorMessage(test(next) || '');
+          },
+        );
+        store.do.reset();
 
         return store;
       }
@@ -203,7 +211,6 @@ tap.test(p.name, (suite) => {
       const watchHistory = [];
 
       store.watch('x', 'y').subscribe((values) => {
-        console.log('watched values:', values);
         watchHistory.push(Math.floor(Math.sqrt(values.get('x') ** 2 + values.get('y') ** 2)));
       });
 
