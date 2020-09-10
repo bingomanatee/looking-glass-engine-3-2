@@ -19,9 +19,9 @@ const SET_RE = /^set([\w].*)/;
 class ValueStore extends ValueStream {
   /**
    *
-   * @param initial {any} value of the store
-   * @param config {Object} tuning properties - optional
-   * @param props {Array} not currently used
+   * @param {any} initial value of the store
+   * @param {Object} config tuning properties - optional
+   * @param {Array} props not currently used
    */
   constructor(initial, config, ...props) {
     super(initial, config, ...props);
@@ -34,15 +34,29 @@ class ValueStore extends ValueStream {
    * Observe several property streams ignoring changes that come from other streams.
    * note- while the root subscxribe waits for all changes to complete/error,
    * watch gives real-time updates of value changes so may be noisier tat times.
-   * @param args {[function]} onChange, onError, onComplete
+   * @param {[function]} args onChange, onError, onComplete
+   * @return {Observable}
    */
   watch(...args) {
     const names = flatten(args).filter((name) => this.streams.has(name));
-    const streams = names.map((name) => this.streams.get(name));
+    const streams = names.map((name) => {
+      const stream = this.streams.get(name);
+      if (stream.changeSubject) {
+        return stream.changeSubject;
+      }
+      return stream;
+    });
     return this._watchStream(names, streams);
   }
 
-  _watchStream(name, streams) {
+  /**
+   * @param {[String]} names an array of the streams' keys
+   * @param {[Observables]} Observables that emit values
+   * @returns {Observable}
+   * @private
+   * @abstract
+   */
+  _watchStream(names, streams) {
     throw new Error('_watchStream must be implemented by concrete class');
   }
 
@@ -86,7 +100,7 @@ class ValueStore extends ValueStream {
    * @return {Change}
    */
   set(name, value) {
-    return this.execute(ACTION_KEY_VALUE_SET, { name, value }, [STAGE_PROCESS, STAGE_PENDING]);
+    return this.execute(ACTION_KEY_VALUE_SET, { name, value });
   }
 
   _watchForMapSet() {
@@ -110,13 +124,20 @@ class ValueStore extends ValueStream {
 
   /**
    * Retrives the current value of a key
-   * @param name {String}
+   * @param {String} name
    * @return {any}
    */
   get(name) {
     throw new Error('must be overridden');
   }
 
+  /**
+   * an accessor for the values. Even if the original source is a map, it always returns an object with keys.
+   * Note if proxies are available is much more efficient than `.asObject` as it Proxies to `.get`
+   * instead of returning an computed object collection.
+   * (If you want to access the true set of values in the stored format use `.value`
+   * @returns {Object}
+   */
   get my() {
     if (typeof Proxy === 'undefined') {
       return this.asObject();
@@ -144,6 +165,15 @@ class ValueStore extends ValueStream {
     return out;
   }
 
+  /**
+   * replaces the stream for a value with a custom Observable stream.
+   * Useful for compounding ValueStores or inserting custom piped Observables into your store.
+   * Best done before store is used
+   *
+   * @param {String} name
+   * @param {Observable} stream
+   * @returns {ValueStore} (self)
+   */
   addStream(name, stream) {
     if (this.streams.has(name)) {
       this.streams.get(name).complete();
@@ -157,11 +187,24 @@ class ValueStore extends ValueStream {
     return this;
   }
 
+  /**
+   * Injects a ValueStream into a stores' values allowing enhanced observation.
+   * @param name
+   * @param value
+   * @returns {ValueStream}
+   */
   createStream(name, value) {
     const stream = new BehaviorSubject(value);
     this.addStream(name, stream);
-    return this;
+    return stream;
   }
+  /**
+   * The map of streams in the object.
+   *
+   * @name streams
+   * @type {Map}
+   * @readonly
+   */
 }
 
 proppify(ValueStore)

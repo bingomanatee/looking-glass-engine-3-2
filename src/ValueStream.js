@@ -20,7 +20,7 @@ import pick from './pick';
 import asMap from './asMap';
 import Change from './Change';
 
-const BRACKETS = [STAGE_BEGIN, STAGE_COMPLETE];
+const BRACKETS = [STAGE_BEGIN, STAGE_PENDING, STAGE_COMPLETE];
 const DEFAULT_STAGES = [STAGE_BEGIN, STAGE_PROCESS, STAGE_PENDING, STAGE_COMPLETE];
 const DEFAULT_STAGE_KEY = Symbol('default stages');
 const ACTION_MAP_SET_STAGES = DEFAULT_STAGES;
@@ -28,13 +28,23 @@ const ACTION_MAP_SET_STAGES = DEFAULT_STAGES;
 const cleanStages = (list) => {
   if (!isArray(list)) list = [];
   let stages = list.filter((ele) => !BRACKETS.includes(ele));
-  stages = uniq(flatten([STAGE_BEGIN, stages, STAGE_PROCESS, STAGE_COMPLETE])).filter(ID);
+  stages = uniq(flatten([STAGE_BEGIN, stages, STAGE_PROCESS, STAGE_PENDING, STAGE_COMPLETE])).filter(ID);
   return stages;
 };
 
 // after a value has changes
 
+/**
+ * An observable for a single item.
+ * Provides enahnced observaation of change sequenced through stages,
+ * actions, and observation of action .
+ */
 export default class ValueStream {
+  /**
+   *
+   * @param {any} initial
+   * @param {Object} config
+   */
   constructor(initial = null, config = {}) {
     this.extend(config);
     this._watchForNext();
@@ -42,6 +52,15 @@ export default class ValueStream {
     this.next(initial);
   }
 
+  /**
+   * Sets the configuration of actions and stages.
+   * while called on initialization,
+   * can be called at any point to configure or extend the stream.
+   * note - configuration also accepts a Msp.
+   * @param {Object} config
+   * @param {[Map]} config.actions
+   * @returns {ValueStream}
+   */
   extend(config) {
     if (!(config && isObject(config))) {
       return this;
@@ -97,10 +116,9 @@ export default class ValueStream {
 
   /**
    * this merges values into the values stream.
-   * this is the worst way to update values as it short circuits the change
-   * sykstem.
    *
-   * @param value
+   * @param {any} value
+   * @return {Change}
    */
   next(value) {
     return this.execute(ACTION_NEXT, value);
@@ -115,10 +133,23 @@ export default class ValueStream {
     });
   }
 
-  on(condition, response) {
-    if (!isFunction(response)) {
+  /**
+   * observes all change flow for a particular subset of events
+   * @param {String | Object|function} condition which set of changes to observe
+   * @param {String} condition.action which action events to care about
+   * @param {scalar} condition.stage which stage of updates to care about
+   * @param {function} listener what to recieve the event with.
+   *                  Note - all errors thrown by the listener will funnel into the change.
+   * @returns {Subscription}
+   */
+  on(condition, listener) {
+    if (!isFunction(listener)) {
       throw new Error('on must end in a function');
     }
+    if (isString(condition)) {
+      return this.on({ action: condition }, listener);
+    }
+
     let selectedEvents;
     if (isObject(condition)) {
       const keys = Array.from(Object.keys(condition));
@@ -157,7 +188,7 @@ export default class ValueStream {
 
     const sub = selectedEvents.subscribe((change) => {
       try {
-        response(change);
+        listener(change);
       } catch (error) {
         change.error(error);
       }
@@ -183,6 +214,19 @@ export default class ValueStream {
     });
   }
 
+  /**
+   * set the stages all updates and actions will go through
+   * unless they have a custom stage definition.
+   *  note - all stages must:
+   *    1. begin with STAGE_BEGIN,
+   *    2. end with STAGE_END,
+   *    3. contain STAGE_PROCESS (between those two stages.
+   *    any other additional stages is up to the users' needs.
+   * stages can be strings or Symbols -- and possibly other things
+   * but those two types are advised.
+   * @param {[scalar]} list
+   * @returns {ValueStream}
+   */
   setDefaultStages(list) {
     if (!isArray(list)) {
       throw new Error('must be an array');
@@ -191,16 +235,36 @@ export default class ValueStream {
     return this;
   }
 
+  /**
+   * Set the stages that all updates(next) go through.
+   * See setDefaultStages for expanded stage detail.
+   *
+   * @param {[scalar]} stages
+   * @returns {ValueStream}
+   */
   setNextStages(...stages) {
     this.setStages(ACTION_NEXT, stages);
     return this;
   }
 
+  /**
+   * Sets the stage for an action.
+   * See setDefaultStages for expanded stage detail.
+   *
+   * @param {String} action
+   * @param {[Scalar]} stages
+   * @returns {ValueStream}
+   */
   setStages(action, stages) {
     this._stages.set(action, cleanStages(stages));
     return this;
   }
 
+  /**
+   * returns the stages that a given action will trigger.
+   * @param {String} action
+   * @returns {[Scalar]}
+   */
   stagesFor(action) {
     if (action === ACTION_KEY_VALUE_SET) return ACTION_MAP_SET_STAGES;
     if (this._stages.has(action)) {
@@ -213,10 +277,19 @@ export default class ValueStream {
     return DEFAULT_STAGES;
   }
 
+  /**
+   * the current value of the Stream.
+   * @returns {*}
+   */
   get value() {
     return this._valueSubject.value;
   }
 
+  /**
+   * A stream that only updates if a value is changed and all changes have been completed.
+   * @returns {BehaviorSubject<unknown>}
+   * @private
+   */
   get _changePipe() {
     if (!this.__changePipe) {
       let changeSet = new Set();
@@ -239,6 +312,15 @@ export default class ValueStream {
     return this.__changePipe;
   }
 
+  /**
+   * A shorthand for adding a listener to the initial update of the stream.
+   * Note - gets the changes' value, not the change itself.
+   * The result of the function updates the value updates the changes' value,
+   * and the value that is passed to subsequent listeners.
+   *
+   * @param {function} fn
+   * @returns {ValueStream} (self)
+   */
   preprocess(fn) {
     this.on({ action: ACTION_NEXT, stage: STAGE_BEGIN }, (change) => {
       change.next(fn(change.value, this));
@@ -246,6 +328,12 @@ export default class ValueStream {
     return this;
   }
 
+  /**
+   * limit an observable to only update when all changes have been processed.
+   * @param subject
+   * @returns {Observable<*>}
+   * @private
+   */
   _bindToChange(subject) {
     return combineLatest(subject, this._changePipe)
       .pipe(
@@ -254,6 +342,10 @@ export default class ValueStream {
       );
   }
 
+  /**
+   * a change-bound version of the value subject.
+   * @returns {Observable<*>}
+   */
   get changeSubject() {
     if (!this.__distinctSubject) {
       this.__distinctSubject = this._bindToChange(this._valueSubject);
@@ -261,19 +353,29 @@ export default class ValueStream {
     return this.__distinctSubject;
   }
 
+  /**
+   * get updates to the value.
+   * @param {[function]} args onChange, onError, onComplete
+   * @returns {Subscription}
+   */
   subscribe(...args) {
     const sub = this.changeSubject.subscribe(...args);
     this.subSets.add(sub);
     return sub;
   }
 
+  /**
+   * adds one or more actions to the actions collection.
+   * @param obj
+   * @returns {ValueStream}
+   */
   addActions(obj) {
     if (!isObject(obj)) {
       throw new Error('non-obj set to addActions');
     }
 
-    Object.keys(obj).forEach((name) => {
-      const def = obj[name];
+    const actionMap = asMap(obj);
+    actionMap.forEach((def, name) => {
       if (isArray(def)) {
         if (isFunction(def[0])) {
           this.action(name, ...def);
@@ -289,22 +391,33 @@ export default class ValueStream {
   }
 
   get _proxyHandler() {
-    return {
-      get(target, name) {
-        return (...args) => {
-          const change = target.execute(name, args);
-          if (change.hasError) {
-            throw change.thrownError;
-          }
-          return change.output;
-        };
-      },
-    };
+    if (!this.__proxyHandler) {
+      this.__proxyHandler = {
+        get(target, name) {
+          return (...args) => {
+            const change = target.execute(name, args);
+            if (change.hasError) {
+              throw change.thrownError;
+            }
+            return change.output;
+          };
+        },
+      };
+    }
+
+    return this.__proxyHandler;
   }
 
   _updateDoNoProxy() {
     this._do = {};
-    this.actions.forEach((action, name) => this._do[name] = (...args) => this.execute(name, args));
+    this.actions.forEach((action, name) => this._do[name] = (...args) => {
+      const change = this.execute(name, args);
+      if (change.hasError) throw change.thrownError;
+      if ('output' in change) {
+        return change.output;
+      }
+      return change;
+    });
   }
 
   get do() {

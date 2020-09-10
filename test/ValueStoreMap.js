@@ -6,7 +6,7 @@ import { ACTION_NEXT, STAGE_COMPLETE, STAGE_PROCESS } from '../src/constants';
 const tap = require('tap');
 const p = require('../package.json');
 const pick = require('../src/pick');
-const { ValueStoreMap } = require('../lib');
+const { ValueStoreMap, ValueStream } = require('../lib');
 
 // const positive = new Meta((a) => (a >= 0 ? false : 'must be > 0'), 'positive', 1);
 
@@ -81,6 +81,7 @@ tap.test(p.name, (suite) => {
         { action: 'next', value: 2, stage: 'initial' },
         { action: 'next', value: 2, stage: 'process' },
         { action: 'next', value: 2, stage: STAGE_ERRORS },
+        { action: 'next', value: 2, stage: 'pending' },
         { action: 'next', value: 2, stage: 'complete' },
       ]);
 
@@ -94,8 +95,8 @@ tap.test(p.name, (suite) => {
             reset(store) {
               store.do.setTouched(false);
               store.do.setErrorMessage('');
-            }
-          }
+            },
+          },
         });
         store.streams.get('value').subscribe(
           (next) => {
@@ -232,6 +233,46 @@ tap.test(p.name, (suite) => {
       w.same(watchHistory, [0, 10]);
 
       store.do.setY(20);
+      w.same(history, [STAGE_ONE, STAGE_TWO, STAGE_THREE]);
+      w.same(watchHistory, [0, 10, 22]);
+
+      store.do.setZ(30);
+      w.same(history, [STAGE_ONE, STAGE_TWO, STAGE_THREE, STAGE_FOUR]);
+      w.same(watchHistory, [0, 10, 22]);
+
+      w.end();
+    });
+
+    vs.test('watch custom streams', (w) => {
+      const store = new ValueStoreMap({ x: 0, y: 0, z: 0 });
+      const yStream = new ValueStream(0);
+      yStream.preprocess((value) => Math.abs(value));
+      store.addStream('y', yStream);
+      const history = [];
+      const watchHistory = [];
+
+      store.watch('x', 'y').subscribe((values) => {
+        watchHistory.push(Math.floor(Math.sqrt(values.get('x') ** 2 + values.get('y') ** 2)));
+      });
+
+      store.subscribe((value) => history.push(value));
+      const STAGE_ONE = new Map([['x', 0], ['y', 0], ['z', 0]]);
+      const STAGE_TWO = new Map([['x', 10], ['y', 0], ['z', 0]]);
+      const STAGE_THREE = new Map([['x', 10], ['y', 20], ['z', 0]]);
+      const STAGE_FOUR = new Map([['x', 10], ['y', 20], ['z', 30]]);
+
+      w.same(history, [STAGE_ONE]);
+      w.same(watchHistory, [0]);
+
+      store.do.setX(10);
+
+      w.same(history, [STAGE_ONE, STAGE_TWO]);
+      w.same(watchHistory, [0, 10]);
+
+      w.same(history, [STAGE_ONE, STAGE_TWO]);
+      w.same(watchHistory, [0, 10]);
+
+      store.do.setY(-20);
       w.same(history, [STAGE_ONE, STAGE_TWO, STAGE_THREE]);
       w.same(watchHistory, [0, 10, 22]);
 

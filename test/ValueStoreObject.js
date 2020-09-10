@@ -81,6 +81,7 @@ tap.test(p.name, (suite) => {
         { action: 'next', value: 2, stage: 'initial' },
         { action: 'next', value: 2, stage: 'process' },
         { action: 'next', value: 2, stage: STAGE_ERRORS },
+        { action: 'next', value: 2, stage: 'pending' },
         { action: 'next', value: 2, stage: 'complete' },
       ]);
 
