@@ -2,6 +2,8 @@ import { ABSENT } from './absent';
 import validators from './validators';
 import ValueStream from './ValueStream';
 import ValueStore from './ValueStore';
+import ValueStoreMap from './ValueStoreMap';
+import ValueStoreObject from './ValueStoreObject';
 import SubjectBlock from './SubjectBlock';
 import Change from './Change';
 import {
@@ -17,6 +19,8 @@ export default {
   validators,
   ValueStream,
   ValueStore,
+  ValueStoreMap,
+  ValueStoreObject,
   ABSENT,
   SubjectBlock,
   Change,

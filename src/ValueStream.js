@@ -10,7 +10,7 @@ import {
 } from './validators';
 
 import {
-  ACTION_MAP_SET,
+  ACTION_KEY_VALUE_SET,
   ACTION_NEXT, STAGE_BEGIN, STAGE_COMPLETE, STAGE_PENDING, STAGE_PERFORM, STAGE_PROCESS,
 } from './constants';
 import { ABSENT, ID, isAbsent } from './absent';
@@ -202,7 +202,7 @@ export default class ValueStream {
   }
 
   stagesFor(action) {
-    if (action === ACTION_MAP_SET) return ACTION_MAP_SET_STAGES;
+    if (action === ACTION_KEY_VALUE_SET) return ACTION_MAP_SET_STAGES;
     if (this._stages.has(action)) {
       return this._stages.get(action);
     }
@@ -239,20 +239,24 @@ export default class ValueStream {
     return this.__changePipe;
   }
 
-  filter(fn) {
+  preprocess(fn) {
     this.on({ action: ACTION_NEXT, stage: STAGE_BEGIN }, (change) => {
       change.next(fn(change.value, this));
     });
     return this;
   }
 
+  _bindToChange(subject) {
+    return combineLatest(subject, this._changePipe)
+      .pipe(
+        filter(([__, pending]) => pending.size === 0),
+        map(([value]) => value),
+      );
+  }
+
   get changeSubject() {
     if (!this.__distinctSubject) {
-      this.__distinctSubject = combineLatest(this._valueSubject, this._changePipe)
-        .pipe(
-          filter(([__, pending]) => pending.size === 0),
-          map(([value]) => value),
-        );
+      this.__distinctSubject = this._bindToChange(this._valueSubject);
     }
     return this.__distinctSubject;
   }

@@ -6,7 +6,7 @@ import { ACTION_NEXT, STAGE_COMPLETE, STAGE_PROCESS } from '../src/constants';
 const tap = require('tap');
 const p = require('../package.json');
 const pick = require('../src/pick');
-const { ValueStore } = require('../lib');
+const { ValueStoreMap } = require('../lib');
 
 // const positive = new Meta((a) => (a >= 0 ? false : 'must be > 0'), 'positive', 1);
 
@@ -18,7 +18,7 @@ const { ValueStore } = require('../lib');
 tap.test(p.name, (suite) => {
   suite.test('ValueStore', (vs) => {
     vs.test('properties, setters', (props) => {
-      const store = new ValueStore({ x: 0, y: 0 });
+      const store = new ValueStoreMap({ x: 0, y: 0 });
 
       let latest = new Map();
       const history = [];
@@ -60,7 +60,7 @@ tap.test(p.name, (suite) => {
 
     vs.test('custom stages', (cs) => {
       const STAGE_ERRORS = Symbol('errors');
-      const store = new ValueStore(0, {
+      const store = new ValueStoreMap(0, {
         nextStages: [STAGE_PROCESS, STAGE_ERRORS],
         actions: {
           offset: (stream, value) => {
@@ -89,7 +89,7 @@ tap.test(p.name, (suite) => {
 
     vs.test('nested Stores', (ns) => {
       function formField(name, value, test) {
-        const store = new ValueStore({ value, errorMessage: '', touched: false }, {
+        const store = new ValueStoreMap({ value, errorMessage: '', touched: false }, {
           actions: {
             reset(store) {
               store.do.setTouched(false);
@@ -110,7 +110,7 @@ tap.test(p.name, (suite) => {
         return store;
       }
 
-      const form = new ValueStore({ name: '', password: '' });
+      const form = new ValueStoreMap({ name: '', password: '' });
       form.DEBUG = true;
 
       form.addStream('name', formField('name', '', (value) => {
@@ -206,7 +206,7 @@ tap.test(p.name, (suite) => {
     });
 
     vs.test('watch', (w) => {
-      const store = new ValueStore({ x: 0, y: 0, z: 0 });
+      const store = new ValueStoreMap({ x: 0, y: 0, z: 0 });
       const history = [];
       const watchHistory = [];
 
@@ -243,7 +243,7 @@ tap.test(p.name, (suite) => {
     });
 
     vs.test('filter', (w) => {
-      const store = new ValueStore({ x: 0, y: 0, z: 0 });
+      const store = new ValueStoreMap({ x: 0, y: 0, z: 0 });
       const history = [];
       const watchHistory = [];
 

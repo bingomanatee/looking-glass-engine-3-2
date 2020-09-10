@@ -1,5 +1,5 @@
 import {
-  STAGE_PENDING, STAGE_PROCESS, ACTION_MAP_SET,
+  STAGE_PENDING, STAGE_PROCESS, ACTION_KEY_VALUE_SET,
 } from './constants';
 
 function makeSet(valueStream) {
@@ -8,7 +8,7 @@ function makeSet(valueStream) {
       if (stream.streams.has(key)) {
         return stream.streams.get(key).next(value);
       }
-      const change = this.execute({ key, value }, ACTION_MAP_SET, [
+      const change = this.execute({ key, value }, ACTION_KEY_VALUE_SET, [
         STAGE_PROCESS, STAGE_PENDING,
       ]);
 

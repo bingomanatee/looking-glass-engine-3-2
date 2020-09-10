@@ -138,7 +138,7 @@ tap.test(p.name, (suite) => {
 
     vs.test('filter', (basic) => {
       const stream = new ValueStream(1);
-      stream.filter((value) => {
+      stream.preprocess((value) => {
         if (!(typeof (value) === 'number')) {
           throw (new Error('not a number'));
         }

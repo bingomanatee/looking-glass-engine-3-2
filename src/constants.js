@@ -9,7 +9,7 @@ export const STAGE_PENDING = ('pending');
 export const STAGE_COMPLETE = ('complete');
 
 export const ACTION_NEXT = ('next');
-export const ACTION_MAP_SET = ('map set');
+export const ACTION_KEY_VALUE_SET = ('map set');
 export const ACTION_ARRAY_SPLICE = ('splice');
 export const ACTION_ARRAY_REMOVE = ('array remove');
 export const ACTION_ARRAY_ADD = ('array add');

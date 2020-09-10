@@ -1,62 +1,62 @@
 import { proppify } from '@wonderlandlabs/propper';
-import { BehaviorSubject, combineLatest, distinctUntilChanged } from 'rxjs';
+import { BehaviorSubject, combineLatest } from 'rxjs';
 import { map } from 'rxjs/operators';
-import isEqual from 'lodash.isequal';
 import ValueStream from './ValueStream';
-
-import { ABSENT, ID, isAbsent } from './absent';
 import {
-  ACTION_MAP_SET, ACTION_NEXT, STAGE_BEGIN, STAGE_COMPLETE, STAGE_PENDING, STAGE_PROCESS,
+  ACTION_KEY_VALUE_SET, STAGE_COMPLETE, STAGE_PENDING, STAGE_PROCESS,
 } from './constants';
 import upperFirst from './upperFirst';
-import asMap from './asMap';
-import { isArray, isString } from './validators';
 import lowerFirst from './lowerFirst';
 import flatten from './flatten';
-import uniq from './uniq';
+import changeIsSet from './changeIsSet';
 
 const SET_RE = /^set([\w].*)/;
 
-const changeIsSet = (change, store) => {
-  if (change.stage !== STAGE_PROCESS) return false;
-  if (store.actions.has(change.action)) {
-    return false;
-  }
-  if (!isString(change.action)) return false;
-  const find = SET_RE.test(change.action);
-  return find;
-};
-
-export default class ValueStore extends ValueStream {
+/**
+ * a collective observable, blending several streams for values into a single
+ * collection. this is an abstract classs that is the basis for ValueStoreMap and ValueStoreObject
+ */
+class ValueStore extends ValueStream {
+  /**
+   *
+   * @param initial {any} value of the store
+   * @param config {Object} tuning properties - optional
+   * @param props {Array} not currently used
+   */
   constructor(initial, config, ...props) {
-    super(asMap(initial), config, ...props);
+    super(initial, config, ...props);
     this._valueToStreams(initial);
     this._watchForMapSet();
     this._watchForKeySet();
   }
 
+  /**
+   * Observe several property streams ignoring changes that come from other streams.
+   * note- while the root subscxribe waits for all changes to complete/error,
+   * watch gives real-time updates of value changes so may be noisier tat times.
+   * @param args {[function]} onChange, onError, onComplete
+   */
   watch(...args) {
     const names = flatten(args).filter((name) => this.streams.has(name));
     const streams = names.map((name) => this.streams.get(name));
-    return combineLatest(streams)
-      .pipe(
-        map((values) => {
-          const m = new Map();
-          names.forEach((name, i) => {
-            m.set(name, values[i]);
-          });
-          return m;
-        }),
-      );
+    return this._watchStream(names, streams);
   }
 
-  filterStream(name, fn) {
-    this.streams.get(name).filter(fn);
-    return this;
+  _watchStream(name, streams) {
+    throw new Error('_watchStream must be implemented by concrete class');
+  }
+
+  /**
+   * generic iterator over stored value
+   * @param target {Object | Map}
+   * @param fn {function}
+   */
+  forEach(target, fn) {
+    throw new Error('must be overrirdden by implementing class');
   }
 
   _valueToStreams(initial) {
-    asMap(initial).forEach((value, name) => {
+    this.forEach(initial, (value, name) => {
       this.createStream(name, value);
     });
   }
@@ -79,33 +79,42 @@ export default class ValueStore extends ValueStream {
     });
   }
 
+  /**
+   * Set the value of an item in the collection
+   * @param name {String} - the key for the object
+   * @param value {any}
+   * @return {Change}
+   */
   set(name, value) {
-    this.execute(ACTION_MAP_SET, { name, value }, [STAGE_PROCESS, STAGE_PENDING]);
+    return this.execute(ACTION_KEY_VALUE_SET, { name, value }, [STAGE_PROCESS, STAGE_PENDING]);
   }
 
   _watchForMapSet() {
     // pipe all pending map sets to stream is they exist.
-    this.on({ action: ACTION_MAP_SET, stage: STAGE_PENDING }, (change) => {
+    this.on({ action: ACTION_KEY_VALUE_SET, stage: STAGE_PENDING }, (change) => {
       const { name, value } = change.value;
       if (this.streams.has(name)) {
         this.streams.get(name).next(value);
         change.complete();
       }
     });
-    this.on({ action: ACTION_MAP_SET, stage: STAGE_COMPLETE }, (change) => {
+    this.on({ action: ACTION_KEY_VALUE_SET, stage: STAGE_COMPLETE }, (change) => {
       const { name, value } = change.value;
-      this._update(name, value);
+      this._updateKeyValue(name, value);
     });
   }
 
-  _update(name, value) {
-    const nextMap = new Map(this.value);
-    nextMap.set(name, value);
-    return this.next(nextMap);
+  _updateKeyValue(name, value) {
+    throw new Error('must be overridden');
   }
 
+  /**
+   * Retrives the current value of a key
+   * @param name {String}
+   * @return {any}
+   */
   get(name) {
-    return this.value.get(name);
+    throw new Error('must be overridden');
   }
 
   get my() {
@@ -113,7 +122,7 @@ export default class ValueStore extends ValueStream {
       return this.asObject();
     }
     if (!this._my) {
-      this._my = new Proxy(this,{
+      this._my = new Proxy(this, {
         get(target, name) {
           return target.get(name);
         },
@@ -140,7 +149,7 @@ export default class ValueStore extends ValueStream {
       this.streams.get(name).complete();
     }
     this.subSets.add(stream.subscribe((next) => {
-      this._update(name, next);
+      this._updateKeyValue(name, next);
     }));
     this.streams.set(name, stream);
     this.set(name, this.my[name]);
@@ -157,3 +166,5 @@ export default class ValueStore extends ValueStream {
 
 proppify(ValueStore)
   .addProp('streams', () => new Map());
+
+export default ValueStore;
