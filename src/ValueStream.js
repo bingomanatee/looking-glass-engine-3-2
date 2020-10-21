@@ -36,8 +36,13 @@ const cleanStages = (list) => {
 
 /**
  * An observable for a single item.
- * Provides enahnced observaation of change sequenced through stages,
- * actions, and observation of action .
+ * Provides enahnced observaation of change sequenced through stages, actions, and observation of action.
+ * Note - this class mimics an Observable by routing a host of properties on its valueSubject (a BehaviorSubject)
+ * (isStopped, value, hasError, thrownError)
+ * and methods
+ * (subscribe, pipe)
+ * to its changeSubject. This split is because the changeSubject
+ * decorates the valueSubject with a muffler that reduces mid-process emissions.
  */
 export default class ValueStream {
   /**
@@ -56,9 +61,15 @@ export default class ValueStream {
    * Sets the configuration of actions and stages.
    * while called on initialization,
    * can be called at any point to configure or extend the stream.
-   * note - configuration also accepts a Msp.
+   * note - configuration also accepts a Msp; and all properties are optional.
+   *
    * @param {Object} config
-   * @param {[Map]} config.actions
+   * @param {Object|Map} config.actions a set of functions that act on the store; see action(..)
+   * @param {[scalar]} config.nextStages a set of stages that all value updates (next)
+   *                   will pass through. see setStages
+   * @param {[scalar]} config.defaultStages a set of stages that all events
+   *                   that are not specifically described will pass through.
+   * @param {Object|Map} config.actionStages a set of stages for each action specific to that action
    * @returns {ValueStream}
    */
   extend(config) {
@@ -278,14 +289,6 @@ export default class ValueStream {
   }
 
   /**
-   * the current value of the Stream.
-   * @returns {*}
-   */
-  get value() {
-    return this._valueSubject.value;
-  }
-
-  /**
    * A stream that only updates if a value is changed and all changes have been completed.
    * @returns {BehaviorSubject<unknown>}
    * @private
@@ -351,17 +354,6 @@ export default class ValueStream {
       this.__distinctSubject = this._bindToChange(this._valueSubject);
     }
     return this.__distinctSubject;
-  }
-
-  /**
-   * get updates to the value.
-   * @param {[function]} args onChange, onError, onComplete
-   * @returns {Subscription}
-   */
-  subscribe(...args) {
-    const sub = this.changeSubject.subscribe(...args);
-    this.subSets.add(sub);
-    return sub;
   }
 
   /**
@@ -461,6 +453,28 @@ export default class ValueStream {
     this._eventSubject.complete();
   }
 }
+
+['isStopped', 'hasError', 'thrownError', 'value'].forEach((name) => {
+  const propDef = {
+    configurable: false,
+    enumerable: true,
+    get() {
+      return this._valueSubject[name];
+    },
+  };
+  Object.defineProperty(ValueStream.prototype, name, propDef);
+});
+
+['subscribe', 'pipe'].forEach((name) => {
+  const propDef = {
+    configurable: false,
+    enumerable: false,
+    get() {
+      return (...args) => this.changeSubject[name](...args);
+    },
+  };
+  Object.defineProperty(ValueStream.prototype, name, propDef);
+});
 
 proppify(ValueStream)
   .addProp('subSets', () => (new Set()))

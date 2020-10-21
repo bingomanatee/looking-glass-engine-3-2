@@ -1,6 +1,6 @@
 {
   "name": "@wonderlandlabs/looking-glass-engine",
-  "version": "3.3.4",
+  "version": "3.3.5",
   "description": "A state engine for React and others",
   "main": "lib/index.js",
   "module": "es/index.js",
@@ -19,12 +19,12 @@
   },
   "dependencies": {
     "@wonderlandlabs/propper": "3.0.2",
-    "chalk": "^4.1.0",
     "lodash.isequal": "^4.5.0",
     "nanoid": "^3.1.12",
     "rxjs": "^6.5.5"
   },
   "devDependencies": {
+    "chalk": "^4.1.0",
     "stream-array": "^1.1.2",
     "vinyl-fs": "^3.0.3",
     "@rollup/plugin-commonjs": "^15.0.0",

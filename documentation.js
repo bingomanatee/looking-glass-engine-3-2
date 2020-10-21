@@ -13,3 +13,15 @@ documentation.build(['src/ValueStore.js'], {})
   .then((output) => {
     fs.writeFileSync('./docs/classes/ValueStore.md', output);
   });
+
+documentation.build(['src/ValueStoreMap.js'], {})
+  .then(documentation.formats.md)
+  .then((output) => {
+    fs.writeFileSync('./docs/classes/ValueStoreMap.md', output);
+  });
+
+documentation.build(['src/ValueStoreObject.js'], {})
+  .then(documentation.formats.md)
+  .then((output) => {
+    fs.writeFileSync('./docs/classes/ValueStoreObject.md', output);
+  });

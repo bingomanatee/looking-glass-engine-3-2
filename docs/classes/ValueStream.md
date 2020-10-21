@@ -3,8 +3,13 @@
 ## ValueStream
 
 An observable for a single item.
-Provides enahnced observaation of change sequenced through stages,
-actions, and observation of action .
+Provides enahnced observaation of change sequenced through stages, actions, and observation of action.
+Note - this class mimics an Observable by routing a host of properties on its valueSubject (a BehaviorSubject)
+(isStopped, value, hasError, thrownError)
+and methods
+(subscribe, pipe)
+to its changeSubject. This split is because the changeSubject
+decorates the valueSubject with a muffler that reduces mid-process emissions.
 
 ### Parameters
 
@@ -16,12 +21,17 @@ actions, and observation of action .
 Sets the configuration of actions and stages.
 while called on initialization,
 can be called at any point to configure or extend the stream.
-note - configuration also accepts a Msp.
+note - configuration also accepts a Msp; and all properties are optional.
 
 #### Parameters
 
 -   `config` **[Object][1]** 
-    -   `config.actions` **\[[Map][2]]** 
+    -   `config.actions` **([Object][1] \| [Map][2])** a set of functions that act on the store; see action(..)
+    -   `config.nextStages` **\[scalar]** a set of stages that all value updates (next)
+                          will pass through. see setStages
+    -   `config.defaultStages` **\[scalar]** a set of stages that all events
+                          that are not specifically described will pass through.
+    -   `config.actionStages` **([Object][1] \| [Map][2])** a set of stages for each action specific to that action
 
 Returns **[ValueStream][3]** 
 
@@ -100,12 +110,6 @@ returns the stages that a given action will trigger.
 
 Returns **\[Scalar]** 
 
-### value
-
-the current value of the Stream.
-
-Returns **any** 
-
 ### preprocess
 
 A shorthand for adding a listener to the initial update of the stream.
@@ -124,16 +128,6 @@ Returns **[ValueStream][3]** (self)
 a change-bound version of the value subject.
 
 Returns **Observable&lt;any>** 
-
-### subscribe
-
-get updates to the value.
-
-#### Parameters
-
--   `args` **\[[function][5]]** onChange, onError, onComplete
-
-Returns **Subscription** 
 
 ### addActions
 
