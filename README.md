@@ -369,7 +369,7 @@ Terminates the subject, and freezes all further subscription notifications.
 Adds a function to a named stream that returns an altered version of the input 
 every time a stream is set. 
 
-```javascript
+```javascript````
 
 const store = new ValueStrem({firstName: ['', 'string'],
 lastName: ['', 'string']
